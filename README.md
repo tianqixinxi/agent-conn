@@ -21,8 +21,10 @@ pnpm install
 pnpm typecheck   # tsc 全仓
 pnpm test        # vitest 全仓
 pnpm lint        # biome
-pnpm agent-comm -- --help          # 跑节点 CLI(tsx)
+pnpm agent-comm -- --help          # 跑节点 CLI(tsx,仅限仓库目录内)
 pnpm relay                          # 跑中继(默认 :8787)
+pnpm build:cli                     # 打包免加载器的 CLI 到 packages/agent-comm/dist
+bin/ac --help                      # 打包产物的入口(任意目录可用;需先 build:cli)
 ```
 
 约定:Node ≥ 22(用 `node:sqlite`,零原生依赖);ESM + NodeNext(包内相对 import 带 `.js` 后缀);zod v3 API;严格模式,`pnpm typecheck`/`test`/`lint` 三绿为完成线(DESIGN §5)。

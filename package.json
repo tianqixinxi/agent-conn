@@ -13,11 +13,13 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "agent-comm": "node --disable-warning=ExperimentalWarning --import tsx packages/agent-comm/src/main.ts",
+    "build:cli": "esbuild packages/agent-comm/src/main.ts --bundle --format=esm --platform=node --target=node22 --outdir=packages/agent-comm/dist --splitting --log-level=warning --banner:js='import { createRequire as __agentCommCr } from \"node:module\"; const require = __agentCommCr(import.meta.url);' && cp packages/agent-comm/src/store/schema.store.sql packages/agent-comm/src/store/schema.hub.sql packages/agent-comm/dist/",
     "relay": "node --disable-warning=ExperimentalWarning --import tsx packages/relay/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.0",
     "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

@@ -15,8 +15,10 @@ import type {
  * 修改须经 architect(见 DESIGN §6 规则)。
  *
  * 语义要点:
- * - actor 贯穿所有会审计的操作('human' 或 'agent:<alias>'),T3 方法要求 'human'(I4:
- *   engine 在运行时校验并拒绝 agent actor,防薄适配层误用)。
+ * - actor 贯穿所有会审计的操作('human' 或 'agent:<alias>')。T3 **变更类**方法
+ *   (deliverHeld/dropHeld/editHeld/setChannelMode)在运行时校验并拒绝 agent actor(I4,
+ *   防薄适配层误用);listHeld/auditQuery 是只读查询,不带 actor——它们的门在"不出现在
+ *   MCP 工具面"(tools.ts 没有对应工具),serve 内部调 listHeld 只为发起 elicitation。
  * - 所有方法幂等或可安全重试(I3)。
  * - payload 一律 unknown,engine 不读内容(I1)。
  */
@@ -161,9 +163,13 @@ export interface HomeDriver {
     member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
   }): Promise<void>
 
-  /** 入频道(alias 唯一,冲突 ALIAS_TAKEN;joinToken 兑换在家侧计数/过期) */
+  /**
+   * 入频道(alias 唯一,冲突 ALIAS_TAKEN;joinToken 兑换在家侧计数/过期)。
+   * channel 仅供日志/诊断:两种家都由 joinToken 反查权威频道名,返回值以家的响应为准
+   * (W1/W3 均已按此实现;字段保留为 optional 是为了调用方语境自述,不参与路由)。
+   */
   join(input: {
-    channel: string
+    channel?: string | undefined
     joinToken: string
     member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
   }): Promise<{

@@ -35,6 +35,13 @@ export const wireRoutes = {
   postAck: (channel: string) => `/ch/${channel}/ack`,
   /** POST 兑换邀请入频道 */
   postJoin: '/join',
+  /**
+   * POST bootstrap:在 relay 上创建新频道并成为首个成员(已存在→409 CHANNEL_EXISTS)。
+   * 鉴权与 /join 同构(首次露面节点用 body.node.publicKey TOFU 验签)。
+   * 任何持钥节点均可建频道;是否限制留给 relay 部署方(反滥用,spec §9.6)。
+   * (集成收口时由 W4 的设计回填进契约,见 DECISIONS D9)
+   */
+  postCreate: (channel: string) => `/ch/${channel}/create`,
   /** POST 铸造邀请(成员限定) */
   postInvites: (channel: string) => `/ch/${channel}/invites`,
   /** GET 成员与卡(供 list_peers 同步) */
@@ -79,7 +86,12 @@ export const GetMessagesQuerySchema = z.object({
 })
 export const GetMessagesRespSchema = z.object({
   messages: z.array(MessageSchema),
-  /** 当前频道最大 seq(游标推进参考) */
+  /**
+   * 游标可安全推进到的位置(客户端 ack 它)。
+   * 语义约束:不得越过任何"未决 held"消息——否则该消息事后放行会被游标跳过。
+   * local 家已按此实现(held 是硬屏障);relay v1 没有 held 放行端点,head=已分配最大 seq
+   * 暂不违约,M3 加远程门时必须二选一:放行即重新赋 seq,或与 local 家同样停 head(见 DECISIONS D9)。
+   */
   head: z.number().int().min(0),
 })
 
@@ -98,6 +110,17 @@ export const PostJoinRespSchema = z.object({
   myAlias: AliasSchema,
   members: z.array(z.object({ alias: AliasSchema, nodeId: NodeIdSchema, card: AgentCardSchema.optional() })),
 })
+
+export const PostCreateChannelReqSchema = z.object({
+  alias: AliasSchema,
+  mode: ChannelModeSchema.optional(),
+  displayName: z.string().optional(),
+  description: z.string().optional(),
+  card: AgentCardSchema.optional(),
+  node: z.object({ nodeId: NodeIdSchema, publicKey: z.string().min(1) }),
+})
+/** 语义上等价于"创建并加入",响应形状与 /join 一致 */
+export const PostCreateChannelRespSchema = PostJoinRespSchema
 
 export const PostInvitesReqSchema = z.object({
   scope: InviteScopeSchema.optional(),

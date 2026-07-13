@@ -1,0 +1,40 @@
+import {
+  formatLocalInviteLink,
+  formatRelayInviteLink,
+  isValidName,
+  parseInviteLink,
+} from '@agent-comm/protocol'
+import { describe, expect, it } from 'vitest'
+
+describe('invite links', () => {
+  it('round-trips relay link with e2e key in fragment', () => {
+    const link = formatRelayInviteLink('https://relay.example.com/', 'tok_abc-123', 'KEYKEY')
+    expect(link).toBe('https://relay.example.com/j/tok_abc-123#k=KEYKEY')
+    const p = parseInviteLink(link)
+    expect(p).toEqual({
+      kind: 'relay',
+      relayUrl: 'https://relay.example.com',
+      joinToken: 'tok_abc-123',
+      e2eKey: 'KEYKEY',
+    })
+  })
+
+  it('round-trips local link', () => {
+    const link = formatLocalInviteLink('/Users/x/.agent-comm/local-hub.db', 't0k')
+    const p = parseInviteLink(link)
+    expect(p).toEqual({ kind: 'local', hubPath: '/Users/x/.agent-comm/local-hub.db', joinToken: 't0k' })
+  })
+
+  it('rejects garbage', () => {
+    expect(() => parseInviteLink('ftp://nope')).toThrow()
+    expect(() => parseInviteLink('https://relay.example.com/join/abc')).toThrow()
+  })
+})
+
+describe('names', () => {
+  it('validates channel/alias names', () => {
+    expect(isValidName('daily_report-1')).toBe(true)
+    expect(isValidName('Bad Name')).toBe(false)
+    expect(isValidName('')).toBe(false)
+  })
+})

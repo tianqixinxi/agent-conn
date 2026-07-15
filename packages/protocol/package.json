@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@a2a-js/sdk": "1.0.0-beta.0",
     "zod": "^3.25.0"
   }
 }

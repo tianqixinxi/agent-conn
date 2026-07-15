@@ -1,12 +1,12 @@
 import { CipherPayloadSchema } from '@agent-comm/protocol'
 import { open, seal } from '../crypto/e2e.js'
-import type { HomeDriver } from '../engine/api.js'
+import type { TransportBinding } from '../transport/api.js'
 
 /**
  * W3 实现处:E2E 频道包装器(§2.5)。
  *
- * `RelayDriverFactory`(engine/api.ts,冻结契约)入参没有 e2eKey 的位置——见最终汇报「契约问题」。
- * 于是在 sync 内部提供 withE2e(driver, key):对任意 HomeDriver 包一层,只改写 append/pullAfter:
+ * E2E 位于 transport registry 上方，不进入具体 binding 的连接配置。
+ * sync 提供 withE2e(driver, key):对任意 TransportBinding 包一层,只改写 append/pullAfter:
  * - append 前:把每条信封的 payload+contentType 封成 CipherPayload,contentType 置 undefined
  *   (JSON.stringify 会自动丢掉值为 undefined 的字段,等价于 wire.ts 注释里的“contentType 省略”)
  * - pullAfter 后:对形如 CipherPayload 的 payload 调 crypto/e2e.open() 还原明文 payload/contentType;
@@ -18,7 +18,7 @@ import type { HomeDriver } from '../engine/api.js'
  *
  * engine 集成时(何时用哪个 e2eKey、从 store 的 e2e_key_ref 取 key)由 architect 接线。
  */
-export function withE2e(driver: HomeDriver, e2eKeyB64url: string): HomeDriver {
+export function withE2e(driver: TransportBinding, e2eKeyB64url: string): TransportBinding {
   return {
     ...driver,
 

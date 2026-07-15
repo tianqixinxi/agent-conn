@@ -42,12 +42,21 @@ export function renderJoinPage(): string {
     background: transparent;
     color: inherit;
   }
+  .primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+    font-weight: 600;
+  }
   .hint { font-size: 0.9rem; opacity: 0.75; }
 </style>
 </head>
 <body>
   <h1>你被邀请加入一个 agent-comm 频道</h1>
-  <p>在终端运行以下命令即可加入(命令已包含完整邀请链接,请不要转发给不信任的人):</p>
+  <p>一键启动一个已连接 AgentComm Channel 的 Claude Code。Claude 会先让你确认新的信任关系。</p>
+  <button class="primary" id="open-agent-btn" type="button">启动 AgentComm + Claude Code</button>
+  <button id="open-claude-btn" type="button">仅用 Claude Code 打开</button>
+  <p>也可以在终端运行以下命令(命令已包含完整邀请链接,请不要转发给不信任的人):</p>
   <pre><code id="join-cmd">正在生成命令…</code></pre>
   <button id="copy-btn" type="button">复制命令</button>
   <p class="hint">
@@ -59,8 +68,26 @@ export function renderJoinPage(): string {
       // # fragment(e2eKey)因此不会被上传到任何地方。
       var link = window.location.href
       var cmd = 'npx agent-comm join "' + link + '"'
+      var prompt = [
+        'Join this AgentComm invitation using the AgentComm integration:',
+        link,
+        '',
+        'Ask me once to confirm the new trust relationship. After I confirm, connect the runtime and handle future channel messages automatically.'
+      ].join('\\n')
       var el = document.getElementById('join-cmd')
       if (el) el.textContent = cmd
+      var openAgentBtn = document.getElementById('open-agent-btn')
+      if (openAgentBtn) {
+        openAgentBtn.addEventListener('click', function () {
+          window.location.href = 'agentcomm://open?invite=' + encodeURIComponent(link)
+        })
+      }
+      var openBtn = document.getElementById('open-claude-btn')
+      if (openBtn) {
+        openBtn.addEventListener('click', function () {
+          window.location.href = 'claude-cli://open?q=' + encodeURIComponent(prompt)
+        })
+      }
       var btn = document.getElementById('copy-btn')
       if (btn) {
         btn.addEventListener('click', function () {

@@ -3,7 +3,7 @@ import type { AgentCard, Message, MessageEnvelope, MsgStatus } from '@agent-comm
 import { AgentCommError, newJoinToken, nowIso } from '@agent-comm/protocol'
 import type { HubMemberRow, HubMessageRow } from '../store/index.js'
 import { openHubDb } from '../store/index.js'
-import type { HomeDriver } from './api.js'
+import type { TransportBinding } from '../transport/api.js'
 
 /**
  * W1 实现处:local 家驱动(D5)。
@@ -13,7 +13,7 @@ import type { HomeDriver } from './api.js'
  * - pullAfter:只下发已放行消息;held 消息构成"游标屏障"——见下方 pullAfter 注释
  * - busy_timeout >= 2000ms(sqlite.ts 的 openDb 设了 5000ms);所有多语句写包事务
  *
- * 关于 HomeDriver.join() 的 `channel` 入参:
+ * 关于 TransportBinding.join() 的 `channel` 入参:
  * local 邀请链接(agentcomm-local:?path=&t=)与 relay 的 PostJoinReqSchema 一样不携带频道名,
  * 频道是由 joinToken 反查 hub_invites/relay 邀请表得到的。因此这里的实现不使用调用方传入的
  * `channel`,而是始终以 token 反查到的频道为准(输出里的 channel 字段是权威值)。
@@ -34,7 +34,7 @@ function toMessage(row: HubMessageRow): Message {
   return { ...row.envelope, seq: row.seq, status: row.status, deliveredAt: undefined, deliveredTo: undefined }
 }
 
-export async function openLocalHome(hubPath: string): Promise<HomeDriver> {
+export async function openLocalHome(hubPath: string): Promise<TransportBinding> {
   const hub = openHubDb(hubPath)
   const home = `local:${hubPath}`
 

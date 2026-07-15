@@ -1,102 +1,173 @@
-# agent-comm 实现架构
+# AgentComm 方案与实现规范
 
-> 上游:`../meee2-workspace/doc/prd/agent-comm-mcp-spec.md`(设计基准,§ 编号出处)+ `agent-comm-requirements-handoff.md`(R/S/C)。偏离与拍板见 `DECISIONS.md`(D 编号)。
-> 本文是实现的**模块契约**:每个模块的职责、公开面、依赖规则。契约(`packages/protocol` + 各模块 `api.ts`)由架构侧维护,实现方**不得擅改契约**——需要改时在 PR/汇报中提出。
+> 本文是当前实现的权威架构说明。历史取舍见 [DECISIONS.md](./DECISIONS.md)。
+> 目标不是再发明一套 agent 协议，而是给 A2A 1.0 补上私密邀请、端到端加密、可靠投递和 Claude Code runtime 体验。
 
-## 1. 总览
+## 1. 产品目标
 
-一句话:`agent-comm` 是装进 Claude Code / Codex 的 stdio MCP,让 agent 之间经**频道 + 收件箱**收发不透明消息;每个 **profile**(本地 SQLite store + Ed25519 keypair)是一个身份(D1);频道的**家**(排序权威)要么是本机共享 hub 文件(`local:`,D5),要么是远端 relay(M2);所有投递都是**从家拉取**:游标 + `messageId` 去重 + 家内单调 `seq` 全序(C5)。
+AgentComm 让两个或多个 agent runtime 通过一条链接建立私密协作关系：
 
-```
-┌─ 机器 A ────────────────────────────────┐
-│ profile "default"        profile "bob"  │        ┌─ relay(M2)─────────┐
-│ ┌─────────────┐         ┌────────────┐  │  HTTPS │  频道日志(密文)+seq │
-│ │ store.db    │         │ store.db   │  │  出站  │  成员表/邀请兑换     │
-│ │ identity    │         │ identity   │  │ ─────► │  游标/retention     │
-│ └──┬──────┬───┘         └──┬─────────┘  │  (sync)│  限流(破冰)         │
-│    │serve │cli             │serve       │        └────────────────────┘
-│    ▼      ▼                ▼            │
-│  ┌────────────────────────────────┐     │   serve = MCP stdio(宿主起)
-│  │ local-hub.db(local 频道的家)   │     │   cli   = 人类治理/诊断(T3)
-│  │ 频道日志 + seq + held 消息      │     │   投递 = 成员从家拉进自己 inbox
-│  └────────────────────────────────┘     │
-└─────────────────────────────────────────┘
-```
+1. 普通事件主动推入 runtime，由 runtime 在已有权限内自动处理。
+2. 只有缺少输入、身份授权或治理审批时才打断用户。
+3. 分享链接可在浏览器中一键启动已经连接频道的 Claude Code。
+4. 模型只看到一个意图级 `agent_comm` 工具，不看到轮询、游标、ACK、加密、transport 等细粒度操作。
+5. AgentCard、Task、Message、Part、Artifact 和任务状态使用 A2A 1.0；AgentComm 只扩展连接与投递能力。
 
-关键不变量(所有模块必须维护):
+非目标：通用 workflow/DAG 编排器、agent 推理框架、长期托管 runtime、重新定义 A2A Task/Message 模型。
 
-- **I1 payload 不透明**(C1):除 L1 可选 intents 外,任何模块不解析/校验 `payload`/`contentType`/`card` 内容。
-- **I2 一频道一家**(§2.2):`seq` 只由家赋;成员侧永不生成 seq。
-- **I3 at-least-once + 幂等**(C5):跨边界写全部以 `messageId` 幂等;重复拉取/上行必须安全。
-- **I4 人类门不给 agent**(C3/§6):T3 动作只存在于 CLI 与 elicitation 响应路径,MCP 工具面不暴露。
-- **I5 文件即状态**(C5):serve/cli 进程随时可死,不丢数据;无必需常驻进程,不装定时任务(D8)。
-- **I6 审计 append-only**(R9):连接/投递/held/drop/edit 全记 `audit` 表。
+## 2. 分层
 
-## 2. 包结构与依赖规则
-
-pnpm workspace,3 个包(D4/D7):
-
-```
-packages/
-├── protocol/     @agent-comm/protocol   实体/信封/wire/链接格式/错误码(Zod + 类型)
-├── agent-comm/   agent-comm             节点二进制:serve(MCP)/join/cli,内部模块见 §3
-└── relay/        @agent-comm/relay      邮箱中继 server(Hono),M2 主体、M1 出契约
+```text
+Claude Code / other runtime
+        │  one high-level agent_comm interface
+        ▼
+Runtime adapter
+  auto-dispatch · approval surfacing · trust prompt
+        │  A2A 1.0 AgentCard / Message / Task / Artifact
+        ▼
+A2A application core
+  context/task identity · lifecycle · INPUT_REQUIRED · AUTH_REQUIRED
+        │  AgentComm private-channel extension
+        ▼
+Delivery engine
+  membership · invitation · E2E · idempotency · inbox · audit
+        │  TransportBinding
+        ├──────── local SQLite hub
+        ├──────── AgentComm HTTP relay
+        ├──────── NATS JetStream (selected stable target; adapter pending)
+        └──────── AGNTCY SLIM (experimental target; adapter pending)
 ```
 
-依赖方向(**只允许向下**):
+层间边界：
 
+- A2A application core 决定“这是什么任务、当前是什么状态”。
+- AgentComm extension 决定“谁可加入、如何路由、如何加密”。
+- transport 只决定“如何可靠送达”，不得发明新的任务状态或业务 payload。
+- runtime adapter 决定“自动处理还是向用户请求决定”。
+
+## 3. A2A 1.0 语义
+
+`@agent-comm/protocol` 以官方 `@a2a-js/sdk` 类型和 codec 为准，外层使用 transport-neutral frame：
+
+```ts
+type A2AFrame = {
+  protocolVersion: '1.0'
+  kind: 'message' | 'task' | 'status-update' | 'artifact-update'
+  value: unknown // official A2A JSON representation
+}
 ```
-agent-comm/mcp ──┐
-agent-comm/cli ──┼──► agent-comm/engine ──► agent-comm/store ──► protocol
-agent-comm/sync ─┘         │                                        ▲
-agent-comm/crypto ◄────────┘                 relay ─────────────────┘
+
+新委派必须发送 A2A `Message(role=user)`，并产生稳定的 `messageId`、`contextId`、`taskId`。处理方：
+
+- 正常完成：发送 `Message(role=agent)`，随后发送 `TaskStatusUpdate(COMPLETED)`。
+- 不需要回复：发送 `COMPLETED` 并 ACK 原事件。
+- 缺信息：发送 `TaskStatusUpdate(INPUT_REQUIRED)`；发起方以新的 `Message(role=user)` 继续同一 task。
+- 缺授权：发送 `TaskStatusUpdate(AUTH_REQUIRED)`，runtime 必须把决定交给用户。
+- 收到 agent message 或 status update 后只 ACK，不再自动生成完成事件，避免状态回声。
+
+AgentComm 路由信息放在扩展 URI
+`https://agentcomm.dev/extensions/private-channel/v1` 对应的 metadata 中，字段仅包含
+`channel / to / from? / replyTo? / taskId?`。transport 仍把整个 A2A frame 当作不透明 payload。
+
+旧的任意 JSON 消息仍可读、可回复；它们在 runtime adapter 中按 legacy user work 处理。这是滚动升级兼容路径，不是新消息的推荐格式。
+
+### AgentCard 与 HTTP 互操作
+
+- trusted gateway 模式公开 `GET /.well-known/agent-card.json`，并支持签名鉴权的 `POST /a2a/v1/message:send`。
+- store-and-forward 绑定只接受 `configuration.returnImmediately=true`，立即返回 `SUBMITTED` Task；不能把异步队列伪装成 A2A 阻塞调用。
+- 当前 HTTP 互操作面是 AgentCard + async `message:send`；stream、task query/cancel 与标准 push notification 尚未声明为支持。
+- 该 gateway 终止标准 A2A JSON，因此会看到 message parts，必须用 `AGENT_COMM_A2A_INGRESS=1` 明确启用。原生 AgentComm 链路继续走 E2E wire endpoint；未来的无明文标准入口应部署在持有频道密钥的 runtime 侧，而不是 relay 侧。
+
+## 4. AgentComm extension
+
+AgentComm 保留 A2A 本身不负责的能力：
+
+- profile/NodeIdentity：Ed25519 keypair 是成员身份锚点。
+- channel membership：频道内 alias 与 nodeId 绑定。
+- one-use invitation：链接携 join token，E2E key 只放 URL fragment。
+- E2E：非本地 transport 用 AES-256-GCM 封装 payload；relay 不读明文。
+- ordered store-and-forward：每频道由 home 分配单调 `seq`，客户端以 cursor 拉取。
+- at-least-once：`messageId` 是跨 transport 重试的幂等键。
+- governance：`auto / intercept / paused`，治理变更必须使用 human actor 并记 append-only audit。
+
+关键不变量：
+
+- transport 不解析 A2A frame 或业务 parts；只做成员校验、路由、排序、密文存储和重试。
+- 一个频道只有一个排序权威 home，成员端不生成 `seq`。
+- ACK 只能在 runtime 明确 reply/complete/suspend 后发生；进程崩溃会重新投递。
+- 连接邀请需要一次明确的信任确认；连接后的安全工作自动处理。
+- transport-held 的放行/拒绝与 A2A `AUTH_REQUIRED` 都会通知用户，但前者是频道治理，后者是任务生命周期，二者不可混为一个 API。
+
+## 5. TransportBinding
+
+delivery engine 只依赖 `TransportBinding`：
+
+```ts
+interface TransportBinding {
+  kind: 'local' | 'relay' | 'nats' | 'slim'
+  home: string
+  createChannel(...): Promise<void>
+  join(...): Promise<JoinResult>
+  mintInvite(...): Promise<InviteResult>
+  members(...): Promise<Member[]>
+  append(...): Promise<AppendResult[]>
+  pullAfter(...): Promise<PullResult>
+  ackCursor(...): Promise<void>
+  // card + governance + close
+}
 ```
 
-- `protocol` 不依赖任何包;`relay` 只依赖 `protocol`(与节点代码零共享实现)。
-- `mcp`/`cli` 是**薄适配器**:不写业务逻辑,只做 IO 变换 + 调 `engine` 公开 API。
-- `engine` 不 import `mcp`/`cli`/`sync` 的实现;对家的访问经 `HomeDriver` 接口(local 驱动在 engine 内,relay 驱动由 `sync` 注册进来)。
-- 跨模块只许 import 对方的 `api.ts`/`index.ts` 公开面。
+`EngineDeps.transportBindingFactories` 是有序 registry：第一个接受 `home` 的 factory 生效；内置 local 和 HTTP relay 是 fallback。E2E wrapper 位于 binding 上方，因此后续 NATS/SLIM adapter 不得各写一套加密逻辑。
 
-## 3. 模块职责与边界
+| Binding | Home | 当前状态 | 用途 |
+|---|---|---|---|
+| Local | `local:<absolute-path>` | 已实现、完整测试 | 本机零基建、多 runtime 验收 |
+| HTTP relay | `http(s)://...` | 已实现、完整测试 | 当前跨机与浏览器邀请 |
+| NATS JetStream | `nats://...` | scheme + factory contract 已就绪；adapter 未交付 | 稳定生产 transport 目标 |
+| AGNTCY SLIM | `slim://...` | scheme + factory contract 已就绪；adapter 未交付 | Node binding 成熟后的安全互操作 |
 
-| 模块(目录) | 职责(唯一职责) | 公开面 | 不做(边界) | 里程碑 |
-|---|---|---|---|---|
-| `protocol/src` | 实体与信封 Zod schema(D1 后字段)、wire 协议(§2.4 三端点 + 限流错误)、邀请链接格式(`https://<relay>/j/<t>#k=` 与 `agentcomm-local:`)、错误码、id 生成与校验 | 全部导出 | 无 IO、无状态、不依赖 node 内建以外任何运行时 | M1 |
-| `agent-comm/config` | profile 解析(`--profile`/env/默认,**禁 cwd 派生**,D1)、路径布局(`~/.agent-comm/profiles/<name>/`)、默认值(inbox cap、hub 路径) | `resolveProfile()` | 不碰 db | M1 |
-| `agent-comm/store` | 单 store 的 SQLite 持久层:DDL、迁移、各实体 repo(channels/members/messages/inbox/peers/identity/sync_state/audit/invites)、WAL 并发 | `openStore()` + 各 repo 接口 | 无业务规则(不判权限/不算投递);不出网 | M1 |
-| `agent-comm/engine` | L0 业务核心:频道 CRUD、邀请铸造/兑换、send 管道(成员校验/信封组装/交给家)、**sync 循环**(对每频道从家拉→inbox 去重落库→ack 游标)、intercept 判定、replyBy 过期、inbox cap 驱逐、audit 记录;`LocalHomeDriver`(共享 hub 文件:赋 seq/成员表/held) | `api.ts` 的 `Engine` 接口 + `HomeDriver` 接口 | 不解析 payload(I1);不做 MCP/CLI IO;relay 网络访问只经注入的 `HomeDriver` | M1 |
-| `agent-comm/crypto` | NodeIdentity 生成/加载(Ed25519,私钥文件 0600)、relay 请求签名(M2)、E2E 加解密(AES-256-GCM,M2)、e2eKey 本地保存 | `identity.ts`/`e2e.ts` | 不碰 store 之外的状态;不发明协议(格式定义在 protocol) | M1 骨架/M2 全量 |
-| `agent-comm/sync` | `RelayHomeDriver`:实现 §2.4 三端点客户端(批量上行/long-poll 下行/ack)、outbox 断网重试、SSE 存活期推送、E2E 封装(调 crypto) | `createRelayDriver()` | 不直接写 inbox(把消息交回 engine 落库);不管 UI | M2 |
-| `agent-comm/mcp` | `agent-comm serve`:stdio MCP server,12 工具(§5 表,D3 后 send 全 T1)→ 映射到 Engine;intercept 消息的 **elicitation** 放行(§7.1);MCP notification(SSE 到货时) | `runServe()` | 工具 handler 里**零业务逻辑**;T3 动作不注册为工具(I4) | M1 |
-| `agent-comm/cli` | 人类面:`init`/`join <link>`/`invite`/`channels`/`peers`/`inbox`/`send`(人工注入,`injectedByHuman`)/ T3 `deliver|hold|drop|edit|mode|audit`/`doctor`;R10 的 join 引导(检测宿主、写 mcp 配置) | `runCli()` | 不绕过 engine 直写 db;join 不写宿主持久指令、不装定时任务(D8) | M1(join 的 relay 部分 M2) |
-| `relay/src` | 邮箱中继:§2.4 三端点(HTTP)、节点注册/Ed25519 请求验签、`from` 盖戳(§2.3)、频道日志(密文)+seq、成员表、邀请兑换(joinToken 哈希)、retention(全员 ack 或 TTL 30d)、破冰限流(D3.2)、`/j/<token>` 引导页(**不读 fragment**,§2.8) | HTTP API(契约在 protocol/wire) | 不解密、不解析 payload(I1);无审批服务(M3 另立模块);无账号体系 | 契约 M1 / 实现 M2 |
+NATS/SLIM 未注册 factory 时必须显式返回 `NOT_IMPLEMENTED`，不得静默退回 HTTP 或内存队列。
 
-## 4. 关键流程(权威描述)
+## 6. Claude Code runtime
 
-**F1 send(agent, T1)**:mcp 工具 → `engine.send()`:校验发送方是频道成员、scope(canSendTo/contentTypes,来自兑换时的 InviteScope)、hop≤50 → 组信封(`messageId`、`traceId` 默认=自身、`from`=我的 alias)→ `home.append(envelope)`。local 家:事务内 `seq=MAX+1`,mode=intercept 时标 `held`;relay 家:入 outbox,由 sync 上行。返回 `{messageId, status}`。
+Claude Channel 只注册一个 `agent_comm` tool：
 
-**F2 read_inbox(agent, T1)**:mcp → `engine.readInbox()`:先对该 profile 所有频道跑一轮 `syncOnce()`(拉基线 §2.6)→ 按 filter 返回 inbox;`consume: true` 标记 consumedAt。`syncOnce()`:`home.pullAfter(cursor)` → 逐条:messageId 去重、replyBy 过期丢弃(audit)、目标含我(`to` = 我的 alias 或 `*`)则入 inbox → `home.ack(seq)` 更新游标。
+| Operation | 意图 |
+|---|---|
+| `share` | 创建/复用频道、发布 A2A AgentCard、返回一次性邀请 |
+| `connect` | 用户确认后兑换邀请并发布 runtime card |
+| `delegate` | 创建 A2A task/message 并委派结果 |
+| `reply` | 回复消息，或继续 INPUT_REQUIRED/AUTH_REQUIRED task |
+| `complete` | 无回复地完成并消费事件 |
+| `request_input` | 用 A2A INPUT_REQUIRED 暂停任务 |
+| `request_approval` | 用 A2A AUTH_REQUIRED 暂停任务 |
+| `resolve_approval` | 应用用户对 transport-held 消息的治理决定 |
 
-**F3 invite/join(人工门,T2)**:`create_invite` → engine 铸 Invite(local:token 存 hub;relay:POST relay 换 joinToken,M2),返回完整链接(e2eKey 只进 fragment)。`connect(link)` → 解析(protocol)→ local:открыть hub 文件、写成员表(alias 唯一)、初始化游标;relay:兑换 joinToken、注册 pubkey、落 e2eKey(M2)。T2 由宿主弹窗保障(D3.1),工具描述里写明后果。
+Channel notification 分类：
 
-**F4 intercept(人在环,§7.1)**:held 消息在家停住 → 成员 serve 在 sync 时发现 held 队列 → 对**收件侧人类**发 elicitation(accept/edit/reject)→ accept:家中标记 deliver、正常拉取;reject:标 dropped;全程 audit。无 serve 在线时用 CLI `agent-comm deliver|drop <messageId>`。v1 简化:任一人类成员的决定即生效(记录 actor),细化留 M3。
+- `message / task_message / task_update / task_artifact`：自动处理。
+- `task_input_required`：优先由 runtime 从上下文补齐；确实缺信息时再问用户。
+- `task_authorization_required / approval_required`：必须通知用户。
 
-**F5 T3 治理(人类专属)**:CLI 直连 engine(`actor: 'human'`),`audit` 可查全量;这些动词**永不**出现在 MCP 工具列表(I4)。
+浏览器邀请页不能读取或上传 `#k`；页面只在本地把完整链接交给 `agentcomm://` launcher。当前 launcher 用 `--plugin-dir` 加载开发目录，所以 development channel 条目必须引用项目 MCP server：`server:agent-comm`，并显式把 plugin root 注入 `CLAUDE_PLUGIN_ROOT` 供根目录 `.mcp.json` 展开；只有从 marketplace 正式安装插件后才使用 `plugin:agent-comm@<marketplace>`。邀请 prompt 必须放在 variadic development-channel 参数之前，避免被误解析成第二个 channel entry。插件的 `PreToolUse` hook 对 `agent_comm(operation=connect)` 强制返回 `ask`，因此兑换邀请前有一次由宿主执行的 yes/no 信任确认，而不是依赖提示词约定。research preview 的 development channel 代码信任确认是额外的宿主边界；正式 allowlist 分发后不再需要 development 标签。
 
-## 5. 验收与测试
+## 7. 包与依赖
 
-- 每模块:vitest 单测,**只测公开面**;store/engine 用临时目录真 SQLite(不 mock db);relay 用 supertest 式 HTTP 内存实例。
-- 集成(M1 收口,architect 负责):`examples/daily-report.sh` —— 同机 3 profile(lead/alice/bob)建「daily」频道 → alice/bob send 简报 → lead read_inbox 汇总 → intercept 模式下 CLI 放行一条。跑通即 M1 验收(S2-lite)。
-- 质量门:`pnpm -r typecheck` + `pnpm -r test` + `pnpm -r lint` 全绿才算完成;禁止 `any` 裸奔(biome/tsc strict)。
-- `node:sqlite` 为 experimental:所有进程入口统一 `process.removeAllListeners('warning')` 前置过滤该警告(cli 输出整洁),测试不受影响。
+```text
+packages/protocol     official A2A adapters + AgentComm schemas/wire/link/errors
+packages/agent-comm   runtime adapter + engine + transport bindings + crypto + CLI
+packages/relay        signed HTTP relay + A2A HTTP ingress + browser join page
+```
 
-## 6. 实现分工(sonnet 执行,architect 收口)
+依赖方向：`relay -> protocol`；`agent-comm runtime/CLI -> engine -> transport/store -> protocol`。
+relay 不 import 节点实现。官方 A2A JS SDK 当前为 1.0 beta，因此所有 SDK codec 使用集中在
+`packages/protocol/src/a2a.ts`；SDK 变化不能渗透到 engine/store/Claude Channel。
 
-| 工单 | 负责目录/文件 | 依赖 |
-|---|---|---|
-| W1 store+engine | `agent-comm/src/{store,engine}` + `crypto/identity.ts`(engine 启动需身份) | protocol(已冻结) |
-| W2 mcp+cli | `agent-comm/src/{mcp,cli}`(`mcp/tools.ts` 是契约,只读) | engine 的 `api.ts`(已冻结;测试用 fake Engine) |
-| W3 e2e+sync | `agent-comm/src/crypto/e2e.ts` + `src/sync` | protocol/wire + `HomeDriver` 接口;签名经工厂注入的 `signRequest`,不依赖 W1 |
-| W4 relay | `relay/src` + `relay/test` | protocol/wire(验签用 node:crypto 按 wire.ts 注释的 canonical 格式自实现,不 import 节点包) |
+## 8. 验收门
 
-规则:只改自己负责的目录 + 对应测试;`package.json`/tsconfig/契约文件(`protocol/*`、`engine/api.ts`、`mcp/tools.ts`)由 architect 改;缺依赖或契约有问题→在最终汇报中提出,不擅自动。
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm lint`
+- 两个独立 Claude Code profile 通过 HTTP relay：share → browser launch/connect → delegate → automatic reply。
+- 人工状态验证：普通消息不提示用户；`INPUT_REQUIRED` 可继续同 task；`AUTH_REQUIRED` 只在用户决定后继续。
+- 兼容验证：legacy JSON 消息仍可 reply/complete；A2A messageId 重试不会重复入队。

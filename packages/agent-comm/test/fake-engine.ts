@@ -158,7 +158,7 @@ export class FakeEngine implements Engine {
 
   async send(input: SendInput, actor: Actor): Promise<SendResult> {
     this.record('send', [input], actor)
-    return { messageId: newMessageId(), status: 'delivered' }
+    return { messageId: input.messageId ?? newMessageId(), status: 'delivered' }
   }
 
   async readInbox(input?: ReadInboxInput): Promise<Message[]> {

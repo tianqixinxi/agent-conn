@@ -1,0 +1,195 @@
+#!/bin/bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/agent-comm-bootstrap.log) 2>&1
+
+dnf install -y docker
+systemctl enable --now docker
+systemctl enable --now amazon-ssm-agent
+
+install -d -m 0750 /opt/agent-comm/bin /opt/agent-comm/state
+install -d -m 0700 -o 10001 -g 10001 /opt/agent-comm/data
+install -d -m 0750 /opt/agent-comm/caddy/data /opt/agent-comm/caddy/config
+
+docker network inspect agentcomm >/dev/null 2>&1 || docker network create agentcomm
+
+cat >/opt/agent-comm/caddy/Caddyfile <<'CADDYFILE'
+${domain_name} {
+  encode zstd gzip
+  reverse_proxy agentcomm-relay:8787
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+    -Server
+  }
+
+  log {
+    output stdout
+    format json
+  }
+}
+CADDYFILE
+
+docker pull ${caddy_image}
+docker rm -f agentcomm-caddy >/dev/null 2>&1 || true
+docker run -d \
+  --name agentcomm-caddy \
+  --restart unless-stopped \
+  --network agentcomm \
+  -p 80:80 \
+  -p 443:443 \
+  -v /opt/agent-comm/caddy/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -v /opt/agent-comm/caddy/data:/data \
+  -v /opt/agent-comm/caddy/config:/config \
+  --log-driver awslogs \
+  --log-opt awslogs-region=${aws_region} \
+  --log-opt awslogs-group=${cloudwatch_group} \
+  --log-opt awslogs-stream=caddy \
+  ${caddy_image}
+
+cat >/opt/agent-comm/bin/deploy <<'DEPLOY'
+#!/bin/bash
+set -euo pipefail
+
+IMAGE="$1"
+EXPECTED_REPOSITORY="${ecr_repository_url}"
+AWS_REGION="${aws_region}"
+CLOUDWATCH_GROUP="${cloudwatch_group}"
+A2A_INGRESS="${a2a_ingress}"
+
+case "$IMAGE" in
+  "$EXPECTED_REPOSITORY":*) ;;
+  *)
+    echo "refusing image outside $EXPECTED_REPOSITORY" >&2
+    exit 2
+    ;;
+esac
+
+exec 9>/var/lock/agentcomm-deploy.lock
+flock -n 9 || { echo "another deployment is running" >&2; exit 3; }
+
+REGISTRY=$(printf '%s' "$IMAGE" | cut -d/ -f1)
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$REGISTRY"
+docker pull "$IMAGE"
+
+CURRENT=$(docker inspect --format '{{.Config.Image}}' agentcomm-relay 2>/dev/null || true)
+
+run_relay() {
+  local image="$1"
+  docker rm -f agentcomm-relay >/dev/null 2>&1 || true
+  docker run -d \
+    --name agentcomm-relay \
+    --restart unless-stopped \
+    --network agentcomm \
+    -e NODE_ENV=production \
+    -e PORT=8787 \
+    -e RELAY_DB=/var/lib/agent-comm/relay.db \
+    -e AGENT_COMM_A2A_INGRESS="$A2A_INGRESS" \
+    -v /opt/agent-comm/data:/var/lib/agent-comm \
+    --log-driver awslogs \
+    --log-opt awslogs-region="$AWS_REGION" \
+    --log-opt awslogs-group="$CLOUDWATCH_GROUP" \
+    --log-opt awslogs-stream=relay \
+    "$image"
+}
+
+wait_for_health() {
+  local attempts=0
+  until docker exec agentcomm-relay node -e \
+    "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
+    >/dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 30 ]; then return 1; fi
+    sleep 2
+  done
+}
+
+run_relay "$IMAGE"
+if wait_for_health; then
+  if [ -n "$CURRENT" ] && [ "$CURRENT" != "$IMAGE" ]; then
+    printf '%s\n' "$CURRENT" >/opt/agent-comm/state/previous-image
+  fi
+  printf '%s\n' "$IMAGE" >/opt/agent-comm/state/current-image
+  docker image prune -f --filter until=168h >/dev/null
+  echo "deployed $IMAGE"
+  exit 0
+fi
+
+echo "new relay failed its health check" >&2
+docker logs --tail 100 agentcomm-relay 2>&1 || true
+if [ -z "$CURRENT" ]; then
+  docker rm -f agentcomm-relay >/dev/null 2>&1 || true
+  exit 1
+fi
+
+echo "rolling back to $CURRENT" >&2
+run_relay "$CURRENT"
+wait_for_health
+printf '%s\n' "$CURRENT" >/opt/agent-comm/state/current-image
+exit 1
+DEPLOY
+chmod 0750 /opt/agent-comm/bin/deploy
+
+cat >/opt/agent-comm/bin/rollback <<'ROLLBACK'
+#!/bin/bash
+set -euo pipefail
+
+PREVIOUS=$(cat /opt/agent-comm/state/previous-image 2>/dev/null || true)
+if [ -z "$PREVIOUS" ]; then
+  echo "no previous image has been recorded" >&2
+  exit 1
+fi
+exec /opt/agent-comm/bin/deploy "$PREVIOUS"
+ROLLBACK
+chmod 0750 /opt/agent-comm/bin/rollback
+
+cat >/opt/agent-comm/bin/backup <<'BACKUP'
+#!/bin/bash
+set -euo pipefail
+
+BACKUP_BUCKET="${backup_bucket}"
+AWS_REGION="${aws_region}"
+
+docker inspect agentcomm-relay >/dev/null
+CONTAINER_PATH=$(docker exec agentcomm-relay node /app/backup.mjs | tail -n 1)
+BACKUP_NAME=$(basename "$CONTAINER_PATH")
+HOST_PATH="/opt/agent-comm/data/backups/$BACKUP_NAME"
+
+test -s "$HOST_PATH"
+aws s3 cp "$HOST_PATH" "s3://$BACKUP_BUCKET/relay/$BACKUP_NAME" \
+  --region "$AWS_REGION" \
+  --only-show-errors
+find /opt/agent-comm/data/backups -type f -name 'relay-*.db' -mtime +2 -delete
+echo "uploaded s3://$BACKUP_BUCKET/relay/$BACKUP_NAME"
+BACKUP
+chmod 0750 /opt/agent-comm/bin/backup
+
+cat >/etc/systemd/system/agentcomm-backup.service <<'SERVICE'
+[Unit]
+Description=Back up the AgentComm SQLite relay
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/agent-comm/bin/backup
+SERVICE
+
+cat >/etc/systemd/system/agentcomm-backup.timer <<'TIMER'
+[Unit]
+Description=Daily AgentComm relay backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+systemctl daemon-reload
+systemctl enable --now agentcomm-backup.timer

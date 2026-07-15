@@ -6,13 +6,17 @@ import { AgentCommError } from './errors.js'
  *   e2eKey 只存在于 fragment:HTTP 客户端不上送,引导页不得读取。
  * - local:`agentcomm-local:?path=<hub 绝对路径>&t=<joinToken>`
  *   同机文件即边界,无 e2eKey;不出网。
+ * - pluggable transport:`agentcomm-transport:?home=<encoded nats/slim URL>&t=<token>#k=<e2eKey>`
+ *   非浏览器邀请，交给已注册的 TransportBindingFactory。
  */
 
 export type ParsedInvite =
   | { kind: 'relay'; relayUrl: string; joinToken: string; e2eKey?: string }
   | { kind: 'local'; hubPath: string; joinToken: string }
+  | { kind: 'transport'; home: string; joinToken: string; e2eKey?: string }
 
 export const LOCAL_SCHEME = 'agentcomm-local:'
+export const TRANSPORT_SCHEME = 'agentcomm-transport:'
 
 export function formatRelayInviteLink(relayUrl: string, joinToken: string, e2eKey?: string): string {
   const base = relayUrl.replace(/\/+$/, '')
@@ -25,6 +29,13 @@ export function formatLocalInviteLink(hubPath: string, joinToken: string): strin
   return `${LOCAL_SCHEME}?${q.toString()}`
 }
 
+/** Non-browser transport invitation used by registered NATS/SLIM bindings. */
+export function formatTransportInviteLink(home: string, joinToken: string, e2eKey?: string): string {
+  const q = new URLSearchParams({ home, t: joinToken })
+  const frag = e2eKey ? `#k=${e2eKey}` : ''
+  return `${TRANSPORT_SCHEME}?${q.toString()}${frag}`
+}
+
 export function parseInviteLink(link: string): ParsedInvite {
   const trimmed = link.trim()
   if (trimmed.startsWith(LOCAL_SCHEME)) {
@@ -35,6 +46,22 @@ export function parseInviteLink(link: string): ParsedInvite {
       throw new AgentCommError('INVITE_INVALID', 'local invite link missing path or token')
     }
     return { kind: 'local', hubPath, joinToken }
+  }
+  if (trimmed.startsWith(TRANSPORT_SCHEME)) {
+    const u = new URL(trimmed)
+    const home = u.searchParams.get('home')
+    const joinToken = u.searchParams.get('t')
+    if (!home || !joinToken || (!home.startsWith('nats://') && !home.startsWith('slim://'))) {
+      throw new AgentCommError('INVITE_INVALID', 'transport invite link has invalid home or token')
+    }
+    const frag = new URLSearchParams(u.hash.replace(/^#/, ''))
+    const e2eKey = frag.get('k') ?? undefined
+    return {
+      kind: 'transport',
+      home,
+      joinToken,
+      ...(e2eKey ? { e2eKey } : {}),
+    }
   }
   if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
     const u = new URL(trimmed)

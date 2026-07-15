@@ -84,7 +84,7 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
 
   program.hook('preAction', async (thisCommand, actionCommand) => {
     // doctor 必须在 engine 起不来时也能跑完诊断,不走这条会硬抛的路径(见下方 doctor 命令自身实现)
-    if (actionCommand.name() === 'doctor') return
+    if (actionCommand.name() === 'doctor' || actionCommand.name() === 'install-launcher') return
     const globals = thisCommand.opts<{ profile?: string; json?: boolean }>()
     ctx = await createCliContext({
       profile: globals.profile,
@@ -399,6 +399,16 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
     })
 
   // —— doctor(不走 preAction 建的 ctx:engine 起不来也要把其余项跑完)——
+  program
+    .command('install-launcher')
+    .description('安装 macOS agentcomm:// 浏览器入口（一键启动启用 Channel 的 Claude Code）')
+    .option('--runtime-profile <name>', '固定浏览器 runtime 身份；默认 auto=按 Claude session 隔离', 'auto')
+    .action(async (cmdOpts: { runtimeProfile: string }) => {
+      const { installMacLauncher } = await import('../launcher/macos.js')
+      const appPath = installMacLauncher({ profile: cmdOpts.runtimeProfile })
+      stdout(`已安装 AgentComm 浏览器启动器：${appPath}\n`)
+    })
+
   program
     .command('doctor')
     .description('环境诊断:profile 路径 / store 可开 / hub 可达 / 宿主 CLI 存在性,逐项 ✓/✗')

@@ -1,0 +1,15 @@
+{
+  "name": "agent-comm-local",
+  "description": "Local development marketplace for the AgentComm Claude Code channel.",
+  "owner": {
+    "name": "agent-comm contributors"
+  },
+  "plugins": [
+    {
+      "name": "agent-comm",
+      "source": "./",
+      "description": "Private event-driven communication channel for Claude Code.",
+      "category": "external-integrations"
+    }
+  ]
+}

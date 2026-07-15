@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
   type AgentCard,
@@ -84,6 +85,11 @@ const BUSY_TIMEOUT_MS = 5_000
 // ———————————————————————————————————————————— 打开 / schema
 
 export function openDb(dbPath: string): RelayDb {
+  if (dbPath !== ':memory:') {
+    // DatabaseSync 能创建数据库文件，但不会创建父目录。relay 的常见启动方式会把文件放在
+    // .tmp/ 或 data/ 下，因此在打开前幂等创建目录。
+    mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 })
+  }
   const raw = new DatabaseSync(dbPath)
   // WAL 只对文件库有意义;':memory:' 库下 PRAGMA 会被 SQLite 静默忽略(退化为 memory
   // journal),这里显式跳过以让"内存库不开 WAL"这个意图在代码里可读。

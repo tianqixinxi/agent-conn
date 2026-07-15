@@ -13,7 +13,7 @@ import {
   WireErrorSchema,
   wireRoutes,
 } from '@agent-comm/protocol'
-import type { HomeDriver, RelayDriverFactory } from '../engine/api.js'
+import type { RelayDriverFactory, TransportBinding } from '../transport/api.js'
 
 /**
  * W3 实现处:relay 家驱动(§2.4 客户端,M2)。
@@ -126,7 +126,7 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
     }
   }
 
-  const driver: HomeDriver = {
+  const driver: TransportBinding = {
     kind: 'relay',
     home: relayUrl,
 
@@ -152,7 +152,7 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
         alias: joinInput.member.alias,
         node: {
           nodeId: joinInput.member.nodeId,
-          // wire 的 PostJoinReqSchema.node.publicKey 必填;HomeDriver 契约里是可选字段,
+          // wire 的 PostJoinReqSchema.node.publicKey 必填;TransportBinding 契约里是可选字段,
           // 缺省回退到驱动自身身份的公钥(加入者就是这个节点自己)
           publicKey: joinInput.member.publicKey ?? identity.publicKey,
         },
@@ -189,7 +189,7 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
     },
 
     async append(channel, envelopes) {
-      const results: Awaited<ReturnType<HomeDriver['append']>> = []
+      const results: Awaited<ReturnType<TransportBinding['append']>> = []
       for (let i = 0; i < envelopes.length; i += MAX_APPEND_BATCH) {
         const batch = envelopes.slice(i, i + MAX_APPEND_BATCH)
         const resp = await call(

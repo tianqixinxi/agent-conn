@@ -8,3 +8,4 @@ dist/
 coverage/
 .tmp/
 .playground/
+.claude/settings.local.json

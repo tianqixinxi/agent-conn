@@ -5,10 +5,19 @@ import type {
   ChannelMode,
   InviteScope,
   Message,
-  MessageEnvelope,
   NodeIdentity,
   Peer,
 } from '@agent-comm/protocol'
+import type { RelayDriverFactory, TransportBindingFactory } from '../transport/api.js'
+
+export type {
+  HomeDriver,
+  RelayDriverFactory,
+  TransportBinding,
+  TransportBindingFactory,
+  TransportBindingFactoryInput,
+  TransportKind,
+} from '../transport/api.js'
 
 /**
  * ⚠️ 契约文件:engine 的公开面。mcp/cli/sync 只 import 本文件与 createEngine。
@@ -26,6 +35,8 @@ import type {
 export type Actor = 'human' | `agent:${string}`
 
 export interface SendInput {
+  /** Optional caller-generated id enables A2A idempotency across binding retries. */
+  messageId?: string | undefined
   channel?: string | undefined
   to: string // Alias | '*'
   payload: unknown
@@ -146,101 +157,10 @@ export interface Engine {
   close(): Promise<void>
 }
 
-/**
- * 家驱动(§2.2/D5):一频道一家。local 驱动在 engine 内(W1);
- * relay 驱动由 sync 模块实现并经 EngineDeps 注入(W3)。
- */
-export interface HomeDriver {
-  readonly kind: 'local' | 'relay'
-  readonly home: string
-
-  /** 建频道(家侧权威记录);已存在则 CHANNEL_EXISTS */
-  createChannel(input: {
-    name: string
-    displayName?: string | undefined
-    mode?: ChannelMode | undefined
-    description?: string | undefined
-    member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
-  }): Promise<void>
-
-  /**
-   * 入频道(alias 唯一,冲突 ALIAS_TAKEN;joinToken 兑换在家侧计数/过期)。
-   * channel 仅供日志/诊断:两种家都由 joinToken 反查权威频道名,返回值以家的响应为准
-   * (W1/W3 均已按此实现;字段保留为 optional 是为了调用方语境自述,不参与路由)。
-   */
-  join(input: {
-    channel?: string | undefined
-    joinToken: string
-    member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
-  }): Promise<{
-    channel: string
-    mode: ChannelMode
-    members: { alias: string; nodeId: string; card?: AgentCard | undefined }[]
-    scope?: InviteScope | undefined
-  }>
-
-  leave(input: { channel: string; alias: string; nodeId: string }): Promise<void>
-
-  mintInvite(input: {
-    channel: string
-    byNode: string
-    scope?: InviteScope | undefined
-    ttlMs?: number | undefined
-    maxUses?: number | undefined
-  }): Promise<{ joinToken: string; expiresAt?: string | undefined }>
-
-  members(channel: string): Promise<{ alias: string; nodeId: string; card?: AgentCard | undefined }[]>
-  updateCard(input: { channel: string; alias: string; nodeId: string; card: AgentCard }): Promise<void>
-
-  /**
-   * 追加消息(家赋 seq;幂等 by messageId,重复返回 duplicate)。
-   * mode=intercept → status 'held';mode=paused → RATE_LIMITED 拒收。
-   */
-  append(
-    channel: string,
-    envelopes: MessageEnvelope[],
-  ): Promise<
-    {
-      messageId: string
-      seq: number
-      status: 'pending' | 'held' | 'delivered'
-      duplicate?: boolean | undefined
-    }[]
-  >
-
-  /** 拉取 seq > after 的已放行消息(held/dropped 不下发) */
-  pullAfter(
-    channel: string,
-    after: number,
-    opts?: { limit?: number | undefined },
-  ): Promise<{ messages: Message[]; head: number }>
-
-  ackCursor(channel: string, nodeId: string, seq: number): Promise<void>
-
-  // —— 门(T3;局部于家)——
-  listHeld(channel: string): Promise<Message[]>
-  resolveHeld(input: {
-    channel: string
-    messageId: string
-    resolution: 'deliver' | 'drop'
-    editedPayload?: unknown
-    editedContentType?: string | undefined
-    actor: string
-  }): Promise<void>
-  setMode(channel: string, mode: ChannelMode): Promise<void>
-
-  close(): Promise<void>
-}
-
-/** relay 家驱动工厂签名(W3 实现;engine 用它打开 https home) */
-export type RelayDriverFactory = (input: {
-  relayUrl: string
-  identity: NodeIdentity
-  signRequest: (canonical: string) => Promise<string>
-}) => HomeDriver
-
 export interface EngineDeps {
-  /** 缺省用内建 LocalHomeDriver 打开 'local:' 家;https 家经 relayDriverFactory */
+  /** Ordered custom bindings (NATS/SLIM/etc.); the first factory accepting the home wins. */
+  transportBindingFactories?: TransportBindingFactory[] | undefined
+  /** @deprecated HTTPS compatibility hook; use transportBindingFactories for new bindings. */
   relayDriverFactory?: RelayDriverFactory | undefined
   /** 收到新消息时回调(mcp 用于 MCP notification;可选) */
   onInboxChange?: (() => void) | undefined

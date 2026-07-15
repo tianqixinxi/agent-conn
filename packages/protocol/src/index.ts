@@ -1,3 +1,4 @@
+export * from './a2a.js'
 export * from './entities.js'
 export * from './errors.js'
 export * from './ids.js'

@@ -1,0 +1,72 @@
+name: AWS infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform operation
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: agent-comm-production-infra
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_project_name: ${{ vars.AGENT_COMM_PROJECT }}
+      TF_VAR_environment: ${{ vars.AGENT_COMM_ENVIRONMENT }}
+      TF_VAR_domain_name: ${{ vars.AGENT_COMM_DOMAIN }}
+      TF_VAR_route53_zone_id: ${{ vars.ROUTE53_ZONE_ID }}
+      TF_VAR_cloudflare_zone_id: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      TF_VAR_cloudflare_proxied: ${{ vars.CLOUDFLARE_PROXIED || 'true' }}
+      TF_VAR_enable_a2a_ingress: ${{ vars.ENABLE_A2A_INGRESS || 'false' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: agent-comm-terraform
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+      - name: Initialize Terraform
+        working-directory: deploy/aws/terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+      - run: terraform fmt -check
+        working-directory: deploy/aws/terraform
+      - run: terraform validate
+        working-directory: deploy/aws/terraform
+      - name: Plan
+        working-directory: deploy/aws/terraform
+        run: terraform plan -input=false -out=agent-comm.tfplan
+      - name: Apply
+        if: inputs.action == 'apply'
+        working-directory: deploy/aws/terraform
+        run: terraform apply -input=false -auto-approve agent-comm.tfplan
+      - name: Deployment outputs
+        if: inputs.action == 'apply'
+        working-directory: deploy/aws/terraform
+        run: terraform output >> "$GITHUB_STEP_SUMMARY"

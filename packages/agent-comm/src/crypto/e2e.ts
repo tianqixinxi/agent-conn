@@ -1,4 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { CipherPayload } from '@agent-comm/protocol'
 import { AgentCommError } from '@agent-comm/protocol'
 
@@ -23,6 +25,23 @@ export function newE2eKey(): string {
   return randomBytes(KEY_BYTES).toString('base64url')
 }
 
+/**
+ * 频道密钥只落在节点自己的 profile 目录，store 只保存这个文件引用。
+ * 显式 chmod 避免 umask/已有文件权限让组密钥变得过宽。
+ */
+export function saveE2eKey(keyPath: string, e2eKeyB64url: string): void {
+  validateE2eKey(e2eKeyB64url)
+  mkdirSync(dirname(keyPath), { recursive: true, mode: 0o700 })
+  writeFileSync(keyPath, `${e2eKeyB64url}\n`, { mode: 0o600 })
+  chmodSync(keyPath, 0o600)
+}
+
+export function loadE2eKey(keyPath: string): string {
+  const key = readFileSync(keyPath, 'utf8').trim()
+  validateE2eKey(key)
+  return key
+}
+
 /** 仅做格式校验,不做语义区分(调用方决定校验失败时对外报什么错) */
 function decodeKeyStrict(e2eKeyB64url: string): Buffer {
   const key = Buffer.from(e2eKeyB64url, 'base64url')
@@ -30,6 +49,14 @@ function decodeKeyStrict(e2eKeyB64url: string): Buffer {
     throw new Error(`e2eKey must decode to ${KEY_BYTES} bytes, got ${key.length}`)
   }
   return key
+}
+
+export function validateE2eKey(e2eKeyB64url: string): void {
+  try {
+    decodeKeyStrict(e2eKeyB64url)
+  } catch (err) {
+    throw new AgentCommError('INVALID_INPUT', `invalid E2E key: ${(err as Error).message}`, err)
+  }
 }
 
 /** 加密 payload+contentType → CipherPayload(路由字段明文,内容密文,§2.5) */

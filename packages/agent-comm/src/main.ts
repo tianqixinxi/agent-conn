@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process'
-import { resolveProfile } from './config.js'
+import { resolveChannelProfile, resolveProfile } from './config.js'
 
 /**
  * 入口分发:`agent-comm serve` = MCP stdio;其余全走 CLI。
@@ -8,6 +8,22 @@ import { resolveProfile } from './config.js'
  */
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
+  if (argv[0] === 'handle-url') {
+    const rawUrl = argv[1]
+    if (!rawUrl) throw new Error('handle-url requires an agentcomm:// URL')
+    const { handleLauncherUrl } = await import('./launcher/macos.js')
+    handleLauncherUrl(rawUrl)
+    return
+  }
+  if (argv[0] === 'channel') {
+    const profileFlag = argv.indexOf('--profile')
+    const profile = resolveChannelProfile({
+      profile: profileFlag >= 0 ? argv[profileFlag + 1] : undefined,
+    })
+    const { runChannel } = await import('./mcp/channel.js')
+    await runChannel(profile)
+    return
+  }
   if (argv[0] === 'serve') {
     const profileFlag = argv.indexOf('--profile')
     const profile = resolveProfile({

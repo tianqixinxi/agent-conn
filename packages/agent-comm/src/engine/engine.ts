@@ -1,8 +1,10 @@
+import { join } from 'node:path'
 import type { AgentCard, AuditEvent, InviteScope, Message, MessageEnvelope } from '@agent-comm/protocol'
 import {
   AgentCommError,
   formatLocalInviteLink,
   formatRelayInviteLink,
+  formatTransportInviteLink,
   HOP_LIMIT,
   isAgentCommError,
   newMessageId,
@@ -10,10 +12,14 @@ import {
   parseInviteLink,
 } from '@agent-comm/protocol'
 import type { ProfilePaths } from '../config.js'
-import { ensureIdentity } from '../crypto/identity.js'
+import { loadE2eKey, newE2eKey, saveE2eKey, validateE2eKey } from '../crypto/e2e.js'
+import { ensureIdentity, signCanonical } from '../crypto/identity.js'
 import type { StoreChannelRow, StoreHandle, StoreMessageRow } from '../store/index.js'
 import { openStore } from '../store/index.js'
-import type { Engine, EngineDeps, HeldMessage, HomeDriver } from './api.js'
+import { createRelayDriver } from '../sync/relay-driver.js'
+import { withE2e } from '../sync/with-e2e.js'
+import type { TransportBinding } from '../transport/api.js'
+import type { Engine, EngineDeps, HeldMessage } from './api.js'
 import { openLocalHome } from './local-home.js'
 
 /**
@@ -80,31 +86,47 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
   store.identity.insertIfAbsent(identity)
   const inboxCap = deps.inboxCap ?? DEFAULT_INBOX_CAP
 
-  const homeDrivers = new Map<string, HomeDriver>()
+  const transportBindings = new Map<string, TransportBinding>()
 
-  async function getHomeDriver(home: string): Promise<HomeDriver> {
-    const cached = homeDrivers.get(home)
+  async function getTransportBinding(home: string): Promise<TransportBinding> {
+    const cached = transportBindings.get(home)
     if (cached) return cached
-    let driver: HomeDriver
-    if (home.startsWith('local:')) {
+    let driver: TransportBinding | undefined
+    const factoryInput = {
+      home,
+      identity,
+      signRequest: (canonical: string) => signCanonical(profile.identityKeyPath, canonical),
+    }
+    for (const factory of deps.transportBindingFactories ?? []) {
+      driver = await factory(factoryInput)
+      if (driver) break
+    }
+    if (!driver && home.startsWith('local:')) {
       driver = await openLocalHome(hubPathOf(home))
-    } else {
-      if (!deps.relayDriverFactory) {
-        throw new AgentCommError(
-          'HOME_UNREACHABLE',
-          `relay 家暂不可达:relay 支持在 M2 落地,当前未注入 relayDriverFactory(home=${home})`,
-        )
-      }
-      driver = deps.relayDriverFactory({
+    }
+    if (!driver && (home.startsWith('http://') || home.startsWith('https://'))) {
+      const relayDriverFactory = deps.relayDriverFactory ?? createRelayDriver
+      driver = relayDriverFactory({
         relayUrl: home,
         identity,
-        signRequest: (canonical: string) => {
-          throw new AgentCommError('NOT_IMPLEMENTED', `signRequest 占位未接入(${canonical.length} 字节待签)`)
-        },
+        signRequest: factoryInput.signRequest,
       })
     }
-    homeDrivers.set(home, driver)
+    if (!driver) {
+      throw new AgentCommError('NOT_IMPLEMENTED', `no transport binding accepts home: ${home}`)
+    }
+    transportBindings.set(home, driver)
     return driver
+  }
+
+  function channelKeyPath(channel: string): string {
+    return join(profile.dir, 'keys', `${channel}.key`)
+  }
+
+  async function getChannelDriver(ch: StoreChannelRow): Promise<TransportBinding> {
+    const driver = await getTransportBinding(ch.home)
+    if (driver.kind === 'local' || !ch.e2eKeyRef) return driver
+    return withE2e(driver, loadE2eKey(ch.e2eKeyRef))
   }
 
   function requireChannel(name: string): StoreChannelRow {
@@ -162,8 +184,14 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     messageId: string,
   ): Promise<{ channel: string; home: string; message: Message } | undefined> {
     for (const ch of store.channels.list()) {
-      const driver = await getHomeDriver(ch.home)
-      const held = await driver.listHeld(ch.name)
+      const driver = await getChannelDriver(ch)
+      let held: Message[]
+      try {
+        held = await driver.listHeld(ch.name)
+      } catch (err) {
+        if (isAgentCommError(err, 'NOT_IMPLEMENTED')) continue
+        throw err
+      }
       const match = held.find((m) => m.messageId === messageId)
       if (match) return { channel: ch.name, home: ch.home, message: match }
     }
@@ -226,7 +254,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async createChannel(input, actor) {
       const home = input.home ?? localHomeString(profile.defaultHubPath)
-      const driver = await getHomeDriver(home)
+      const driver = await getTransportBinding(home)
       await driver.createChannel({
         name: input.name,
         displayName: input.displayName,
@@ -236,6 +264,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       })
       const createdAt = nowIso()
       const mode = input.mode ?? 'auto'
+      const e2eKeyRef = home.startsWith('local:') ? undefined : channelKeyPath(input.name)
+      if (e2eKeyRef) saveE2eKey(e2eKeyRef, newE2eKey())
       store.channels.upsert({
         name: input.name,
         home,
@@ -244,6 +274,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         description: input.description,
         myAlias: input.alias,
         scope: undefined,
+        e2eKeyRef,
         createdAt,
       })
       store.peers.upsert({
@@ -273,9 +304,9 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async joinChannel(input, actor) {
       const home = localHomeString(profile.defaultHubPath)
-      const driver = await getHomeDriver(home)
+      const driver = await getTransportBinding(home)
       // 本机 hub 上"无邀请直接加入":引擎内部自铸一次性邀请并立即兑换,对调用方屏蔽 token 概念
-      // (HomeDriver.join 契约要求 joinToken;mintInvite 若频道不存在会先抛 CHANNEL_NOT_FOUND)。
+      // (TransportBinding.join 契约要求 joinToken;mintInvite 若频道不存在会先抛 CHANNEL_NOT_FOUND)。
       const minted = await driver.mintInvite({ channel: input.channel, byNode: identity.nodeId, maxUses: 1 })
       const result = await driver.join({
         channel: input.channel,
@@ -323,7 +354,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async leaveChannel(input, _actor) {
       const ch = requireChannel(input.channel)
-      const driver = await getHomeDriver(ch.home)
+      const driver = await getChannelDriver(ch)
       await driver.leave({ channel: input.channel, alias: ch.myAlias, nodeId: identity.nodeId })
       store.channels.delete(input.channel)
       // 注:协议 AuditEvent 枚举没有"离开/断开"事件码,此动作不记 audit(见最终汇报)。
@@ -346,7 +377,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = input?.channel !== undefined ? [requireChannel(input.channel)] : store.channels.list()
       for (const ch of channels) {
         try {
-          const driver = await getHomeDriver(ch.home)
+          const driver = await getChannelDriver(ch)
           for (const m of await driver.members(ch.name)) {
             store.peers.upsert({
               channel: ch.name,
@@ -367,7 +398,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async publishCard(card: AgentCard, _actor) {
       for (const ch of store.channels.list()) {
-        const driver = await getHomeDriver(ch.home)
+        const driver = await getChannelDriver(ch)
         await driver.updateCard({ channel: ch.name, alias: ch.myAlias, nodeId: identity.nodeId, card })
         store.peers.upsert({
           channel: ch.name,
@@ -381,7 +412,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async createInvite(input, _actor) {
       const ch = requireChannel(input.channel)
-      const driver = await getHomeDriver(ch.home)
+      const driver = await getChannelDriver(ch)
       const maxUses = input.maxUses ?? 1
       const minted = await driver.mintInvite({
         channel: input.channel,
@@ -390,9 +421,22 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         ttlMs: input.ttlMs,
         maxUses,
       })
+      let e2eKey: string | undefined
+      if (!ch.home.startsWith('local:')) {
+        const e2eKeyRef = ch.e2eKeyRef ?? channelKeyPath(ch.name)
+        if (ch.e2eKeyRef) {
+          e2eKey = loadE2eKey(ch.e2eKeyRef)
+        } else {
+          e2eKey = newE2eKey()
+          saveE2eKey(e2eKeyRef, e2eKey)
+          store.channels.upsert({ ...ch, e2eKeyRef })
+        }
+      }
       const link = ch.home.startsWith('local:')
         ? formatLocalInviteLink(hubPathOf(ch.home), minted.joinToken)
-        : formatRelayInviteLink(ch.home, minted.joinToken)
+        : ch.home.startsWith('http://') || ch.home.startsWith('https://')
+          ? formatRelayInviteLink(ch.home, minted.joinToken, e2eKey)
+          : formatTransportInviteLink(ch.home, minted.joinToken, e2eKey)
       store.invitesMinted.insert({
         link,
         channel: input.channel,
@@ -408,8 +452,19 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async connect(input, actor) {
       const parsed = parseInviteLink(input.link)
-      const home = parsed.kind === 'local' ? localHomeString(parsed.hubPath) : parsed.relayUrl
-      const driver = await getHomeDriver(home)
+      if (parsed.kind === 'relay' || parsed.kind === 'transport') {
+        if (!parsed.e2eKey) {
+          throw new AgentCommError('INVITE_INVALID', 'relay 邀请缺少 E2E 密钥 fragment')
+        }
+        validateE2eKey(parsed.e2eKey)
+      }
+      const home =
+        parsed.kind === 'local'
+          ? localHomeString(parsed.hubPath)
+          : parsed.kind === 'relay'
+            ? parsed.relayUrl
+            : parsed.home
+      const driver = await getTransportBinding(home)
       const result = await driver.join({
         // local/relay 的兑换都由 token 反查频道,这里的 channel 不被驱动实现使用(见 local-home.ts 注释)
         channel: '',
@@ -423,12 +478,22 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       })
       const alreadyKnown = store.channels.get(result.channel) !== undefined
       const createdAt = nowIso()
+      let e2eKeyRef: string | undefined
+      if (parsed.kind === 'relay' || parsed.kind === 'transport') {
+        const e2eKey = parsed.e2eKey
+        if (!e2eKey) {
+          throw new AgentCommError('INVITE_INVALID', 'relay 邀请缺少 E2E 密钥 fragment')
+        }
+        e2eKeyRef = channelKeyPath(result.channel)
+        saveE2eKey(e2eKeyRef, e2eKey)
+      }
       store.channels.upsert({
         name: result.channel,
         home,
         mode: result.mode,
         myAlias: input.alias,
         scope: result.scope,
+        e2eKeyRef,
         createdAt,
       })
       for (const m of result.members) {
@@ -464,8 +529,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channelName = resolveChannelName(input.channel)
       const ch = requireChannel(channelName)
       checkScope(ch.scope, input.to, input.contentType)
-      const driver = await getHomeDriver(ch.home)
-      const messageId = newMessageId()
+      const driver = await getChannelDriver(ch)
+      const messageId = input.messageId ?? newMessageId()
       const injectedByHuman = actor === 'human'
       const envelope: MessageEnvelope = {
         messageId,
@@ -547,7 +612,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       let pulled = 0
       for (const ch of channels) {
-        const driver = await getHomeDriver(ch.home)
+        const driver = await getChannelDriver(ch)
         const after = store.syncState.get(ch.name)
         const { messages, head } = await driver.pullAfter(ch.name, after, { limit: DEFAULT_SYNC_LIMIT })
 
@@ -610,8 +675,14 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       const out: HeldMessage[] = []
       for (const ch of channels) {
-        const driver = await getHomeDriver(ch.home)
-        const held = await driver.listHeld(ch.name)
+        const driver = await getChannelDriver(ch)
+        let held: Message[]
+        try {
+          held = await driver.listHeld(ch.name)
+        } catch (err) {
+          if (isAgentCommError(err, 'NOT_IMPLEMENTED')) continue
+          throw err
+        }
         for (const m of held) out.push({ message: m, channel: ch.name })
       }
       return out
@@ -621,7 +692,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'deliverHeld 仅限 human(I4)')
       const found = await findHeldMessage(input.messageId)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
-      const driver = await getHomeDriver(found.home)
+      const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({
         channel: found.channel,
         messageId: input.messageId,
@@ -643,7 +714,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'dropHeld 仅限 human(I4)')
       const found = await findHeldMessage(input.messageId)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
-      const driver = await getHomeDriver(found.home)
+      const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({
         channel: found.channel,
         messageId: input.messageId,
@@ -665,7 +736,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'editHeld 仅限 human(I4)')
       const found = await findHeldMessage(input.messageId)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
-      const driver = await getHomeDriver(found.home)
+      const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({
         channel: found.channel,
         messageId: input.messageId,
@@ -692,7 +763,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     async setChannelMode(input, actor) {
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'setChannelMode 仅限 human(I4)')
       const ch = requireChannel(input.channel)
-      const driver = await getHomeDriver(ch.home)
+      const driver = await getChannelDriver(ch)
       await driver.setMode(input.channel, input.mode)
       store.channels.setMode(input.channel, input.mode)
       // 注:协议 AuditEvent 枚举没有"改模式"事件码,此动作不记 audit(见最终汇报)。
@@ -714,7 +785,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     },
 
     async close() {
-      for (const d of homeDrivers.values()) {
+      for (const d of transportBindings.values()) {
         await d.close()
       }
       store.close()

@@ -72,8 +72,8 @@ export function signedRequest(
 }
 
 /** 全新内存 relay app(每个测试独立数据库,互不干扰) */
-export function freshApp(): Hono {
-  return createApp({ dbPath: ':memory:' })
+export function freshApp(opts: { enableA2AIngress?: boolean } = {}): Hono {
+  return createApp({ dbPath: ':memory:', ...opts })
 }
 
 export function sleep(ms: number): Promise<void> {

@@ -45,9 +45,10 @@ export function verifySignature(
   }
 }
 
-/** GET /healthz、GET /j/:token 不要求签名(wire.ts:"除 GET /j/<token> 外所有端点要求签名头") */
+/** 健康检查、邀请页与 A2A AgentCard 是公开发现端点，不要求签名。 */
 function isPublicRoute(method: string, pathname: string): boolean {
   if (method === 'GET' && pathname === '/healthz') return true
+  if (method === 'GET' && pathname === '/.well-known/agent-card.json') return true
   if (method === 'GET' && /^\/j\/[^/]+$/.test(pathname)) return true
   return false
 }

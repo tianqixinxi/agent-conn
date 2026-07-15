@@ -1,0 +1,18 @@
+{
+  "description": "Require an explicit Claude Code permission decision before AgentComm redeems an invitation.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*__agent_comm$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/require-connect-approval.mjs"],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

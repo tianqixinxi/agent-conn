@@ -1,7 +1,9 @@
+import { join } from 'node:path'
 import { isAgentCommError } from '@agent-comm/protocol'
 import { describe, expect, it } from 'vitest'
-import type { Engine, EngineDeps } from '../src/engine/api.js'
+import type { Engine, EngineDeps, TransportBindingFactory } from '../src/engine/api.js'
 import { createEngine } from '../src/engine/engine.js'
+import { openLocalHome } from '../src/engine/local-home.js'
 import { createTmpWorkspace, sleep, type TmpWorkspace } from './helpers/tmp-profile.js'
 
 /**
@@ -319,12 +321,42 @@ describe('engine (F1-F5 over a shared local hub)', () => {
     })
   })
 
-  it('relay (https) homes are unreachable in M1 without an injected relayDriverFactory', async () => {
+  it('relay homes use the production driver by default and map connection failures to HOME_UNREACHABLE', async () => {
     await withCtx(async ({ makeEngine }) => {
       const alice = await makeEngine('alice')
+      const e2eKey = Buffer.alloc(32, 7).toString('base64url')
       await expect(
-        alice.connect({ link: 'https://relay.example.com/j/tok_abc#k=key', alias: 'alice' }, 'agent:alice'),
+        alice.connect({ link: `http://127.0.0.1:1/j/tok_abc#k=${e2eKey}`, alias: 'alice' }, 'agent:alice'),
       ).rejects.toSatisfy((e: unknown) => isAgentCommError(e, 'HOME_UNREACHABLE'))
+    })
+  })
+
+  it('routes a custom home through the transport factory registry without changing A2A/E2E delivery', async () => {
+    await withCtx(async ({ ws, makeEngine }) => {
+      const backingHub = join(ws.rootDir, 'nats-binding-test.db')
+      const factory: TransportBindingFactory = async ({ home }) => {
+        if (!home.startsWith('nats://')) return undefined
+        const local = await openLocalHome(backingHub)
+        return { ...local, kind: 'nats', home }
+      }
+      const deps = { transportBindingFactories: [factory] }
+      const alice = await makeEngine('alice', deps)
+      const bob = await makeEngine('bob', deps)
+
+      await alice.createChannel(
+        { name: 'portable', alias: 'alice', home: 'nats://broker.example:4222' },
+        'agent:alice',
+      )
+      const { link } = await alice.createInvite({ channel: 'portable' }, 'agent:alice')
+      expect(link).toMatch(/^agentcomm-transport:/)
+      await bob.connect({ link, alias: 'bob' }, 'agent:bob')
+
+      await alice.send(
+        { channel: 'portable', to: 'bob', payload: { intent: 'portable delivery' } },
+        'agent:alice',
+      )
+      const inbox = await bob.readInbox({})
+      expect(inbox[0]?.payload).toEqual({ intent: 'portable delivery' })
     })
   })
 

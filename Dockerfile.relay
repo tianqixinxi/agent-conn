@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:24.13.0-bookworm-slim AS build
+
+RUN npm install --global pnpm@10.33.0
+WORKDIR /workspace
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/relay/package.json packages/relay/package.json
+RUN pnpm install --frozen-lockfile
+
+COPY packages/protocol/src packages/protocol/src
+COPY packages/relay/src packages/relay/src
+
+RUN pnpm exec esbuild packages/relay/src/main.ts \
+      --bundle \
+      --platform=node \
+      --format=esm \
+      --target=node24 \
+      --outfile=/out/main.js \
+      --log-level=warning \
+    && cp packages/relay/src/schema.sql /out/schema.sql
+
+FROM node:24.13.0-bookworm-slim AS runtime
+
+RUN groupadd --system --gid 10001 agentcomm \
+    && useradd --system --uid 10001 --gid agentcomm --home-dir /app agentcomm \
+    && mkdir -p /app /var/lib/agent-comm \
+    && chown -R agentcomm:agentcomm /app /var/lib/agent-comm
+
+WORKDIR /app
+COPY --from=build --chown=agentcomm:agentcomm /out/main.js /out/schema.sql ./
+COPY --chown=agentcomm:agentcomm deploy/runtime/backup.mjs ./backup.mjs
+
+USER agentcomm
+ENV NODE_ENV=production \
+    PORT=8787 \
+    RELAY_DB=/var/lib/agent-comm/relay.db \
+    AGENT_COMM_A2A_INGRESS=0
+
+EXPOSE 8787
+VOLUME ["/var/lib/agent-comm"]
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=4 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+
+CMD ["node", "--disable-warning=ExperimentalWarning", "/app/main.js"]

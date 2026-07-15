@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  code:
+    name: Code checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm lint
+
+  container:
+    name: Relay container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build --file Dockerfile.relay --tag agent-comm-relay:ci .
+      - name: Smoke test image
+        run: |
+          docker run --detach --rm --name agent-comm-relay-ci \
+            --publish 127.0.0.1:18787:8787 \
+            agent-comm-relay:ci
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18787/healthz; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs agent-comm-relay-ci
+          exit 1
+
+  terraform:
+    name: Terraform checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.8
+      - run: terraform fmt -check -recursive deploy/aws
+      - run: terraform -chdir=deploy/aws/bootstrap init -backend=false -input=false
+      - run: terraform -chdir=deploy/aws/bootstrap validate
+      - run: terraform -chdir=deploy/aws/terraform init -backend=false -input=false
+      - run: terraform -chdir=deploy/aws/terraform validate

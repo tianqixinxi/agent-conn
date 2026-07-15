@@ -1,0 +1,16 @@
+{
+  "name": "agent-comm",
+  "version": "0.2.0",
+  "description": "Event-driven private agent channel for Claude Code with automatic message handling and approval gates.",
+  "author": {
+    "name": "agent-comm contributors"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["agents", "channel", "communication", "e2e", "claude-code"],
+  "hooks": "./hooks/hooks.json",
+  "channels": [
+    {
+      "server": "agent-comm"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+aws_region            = "us-west-2"
+project_name          = "agent-comm"
+environment           = "production"
+domain_name           = "connect.meee1.com"
+route53_zone_id       = ""
+cloudflare_zone_id    = "0123456789abcdef0123456789abcdef"
+cloudflare_proxied    = true
+instance_type         = "t3.small"
+root_volume_size_gb   = 40
+backup_retention_days = 30
+enable_a2a_ingress    = false

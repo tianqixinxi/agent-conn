@@ -44,6 +44,9 @@ importers:
 
   packages/protocol:
     dependencies:
+      '@a2a-js/sdk':
+        specifier: 1.0.0-beta.0
+        version: 1.0.0-beta.0(express@5.2.1)
       zod:
         specifier: ^3.25.0
         version: 3.25.76
@@ -64,6 +67,21 @@ importers:
         version: 3.25.76
 
 packages:
+
+  '@a2a-js/sdk@1.0.0-beta.0':
+    resolution: {integrity: sha512-1k2GJdATg0ZJMNVD0jqox+oE5teUaUbJWx5ooSW2i3hA/B00Ev6kK3hZuxcsoZYbYvp8eAyppU3rvjTpglzdcg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@bufbuild/protobuf': ^2.10.2
+      '@grpc/grpc-js': ^1.11.0
+      express: ^4.21.2 || ^5.1.0
+    peerDependenciesMeta:
+      '@bufbuild/protobuf':
+        optional: true
+      '@grpc/grpc-js':
+        optional: true
+      express:
+        optional: true
 
   '@biomejs/biome@2.5.3':
     resolution: {integrity: sha512-MrJswFdei9EfDwwUy2tQrPDpK0AO+RmMFvBoaaJ6ayBc3sUbHdCE+XG5N8vp+5So41ZupZJQm0roHFFhMGVD7A==}
@@ -951,6 +969,10 @@ packages:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
 
+  uuid@11.1.1:
+    resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
+    hasBin: true
+
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
@@ -1050,6 +1072,13 @@ packages:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
 snapshots:
+
+  '@a2a-js/sdk@1.0.0-beta.0(express@5.2.1)':
+    dependencies:
+      jose: 6.2.3
+      uuid: 11.1.1
+    optionalDependencies:
+      express: 5.2.1
 
   '@biomejs/biome@2.5.3':
     optionalDependencies:
@@ -1829,6 +1858,8 @@ snapshots:
   undici-types@7.18.2: {}
 
   unpipe@1.0.0: {}
+
+  uuid@11.1.1: {}
 
   vary@1.1.2: {}
 

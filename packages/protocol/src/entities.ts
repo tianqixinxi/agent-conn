@@ -17,9 +17,15 @@ export const IsoSchema = z.string().datetime({ offset: true }).or(z.string().dat
 /** 频道的家:排序权威 + 门的位置(§2.2,D5) */
 export const HomeSchema = z
   .string()
-  .refine((s) => s.startsWith('local:') || s.startsWith('https://') || s.startsWith('http://'), {
-    message: "home must be 'local:<abs-path>' or a relay URL",
-  })
+  .refine(
+    (s) =>
+      s.startsWith('local:') ||
+      s.startsWith('https://') ||
+      s.startsWith('http://') ||
+      s.startsWith('nats://') ||
+      s.startsWith('slim://'),
+    { message: "home must be 'local:<abs-path>' or a supported transport URL" },
+  )
 export type Home = z.infer<typeof HomeSchema>
 
 export const ChannelModeSchema = z.enum(['auto', 'intercept', 'paused'])

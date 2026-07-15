@@ -1,6 +1,7 @@
 import {
   formatLocalInviteLink,
   formatRelayInviteLink,
+  formatTransportInviteLink,
   isValidName,
   parseInviteLink,
 } from '@agent-comm/protocol'
@@ -23,6 +24,16 @@ describe('invite links', () => {
     const link = formatLocalInviteLink('/Users/x/.agent-comm/local-hub.db', 't0k')
     const p = parseInviteLink(link)
     expect(p).toEqual({ kind: 'local', hubPath: '/Users/x/.agent-comm/local-hub.db', joinToken: 't0k' })
+  })
+
+  it('round-trips a pluggable transport link with its E2E key', () => {
+    const link = formatTransportInviteLink('nats://broker.example:4222', 'tok_nats', 'KEYKEY')
+    expect(parseInviteLink(link)).toEqual({
+      kind: 'transport',
+      home: 'nats://broker.example:4222',
+      joinToken: 'tok_nats',
+      e2eKey: 'KEYKEY',
+    })
   })
 
   it('rejects garbage', () => {

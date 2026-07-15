@@ -1,0 +1,8 @@
+aws_region        = "us-west-2"
+project_name      = "agent-comm"
+environment       = "production"
+github_repository = "your-org/agent-comm"
+github_environment = "production"
+
+# Set this only when the AWS account already has the GitHub Actions provider.
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"

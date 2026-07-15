@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+.tmp
+.playground
+coverage
+dist
+node_modules
+*.db
+*.db-shm
+*.db-wal
+*.log
+deploy/aws

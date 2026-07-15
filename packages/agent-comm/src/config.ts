@@ -34,6 +34,22 @@ export interface ResolveProfileOptions {
 export const DEFAULT_INBOX_CAP = 1000
 export const DEFAULT_HUB_BASENAME = 'local-hub.db'
 
+/**
+ * Claude Channel 的身份默认绑定 Claude session，而不是终端继承的机器级 profile。
+ * 同一 session resume 后保持身份；同机打开两个 Claude runtime 时则天然是两个节点。
+ * 如确实需要固定身份，可用 --profile 或 AGENT_COMM_CHANNEL_PROFILE 显式覆盖。
+ */
+export function resolveChannelProfile(opts: ResolveProfileOptions = {}): ProfilePaths {
+  const env = opts.env ?? process.env
+  const sessionId = env.CLAUDE_CODE_SESSION_ID?.replaceAll('-', '').replace(/[^A-Za-z0-9_]/g, '')
+  const sessionProfile = sessionId ? `claude-${sessionId.slice(0, 12)}` : undefined
+  return resolveProfile({
+    ...opts,
+    env,
+    profile: opts.profile ?? env.AGENT_COMM_CHANNEL_PROFILE ?? sessionProfile,
+  })
+}
+
 export function resolveProfile(opts: ResolveProfileOptions = {}): ProfilePaths {
   const env = opts.env ?? process.env
   const name = opts.profile ?? env.AGENT_COMM_PROFILE ?? 'default'

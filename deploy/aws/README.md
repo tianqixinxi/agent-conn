@@ -78,6 +78,17 @@ AWS_PROFILE=YOUR_PROFILE terraform -chdir=deploy/aws/bootstrap apply
 AWS_PROFILE=YOUR_PROFILE terraform -chdir=deploy/aws/bootstrap output
 ```
 
+GitHub repositories created with immutable OIDC subjects need
+`github_oidc_subject_prefix` in `bootstrap/terraform.tfvars`. Obtain it with:
+
+```bash
+gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix
+```
+
+The value includes stable owner and repository IDs, such as
+`repo:owner@123456/repo@789012`. Keeping those IDs in the AWS trust policy prevents a renamed or
+re-created repository from inheriting production access.
+
 If the AWS account already has the GitHub Actions provider, set `github_oidc_provider_arn` in the
 bootstrap tfvars. The bootstrap creates:
 

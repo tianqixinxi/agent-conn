@@ -17,3 +17,7 @@ output "github_deploy_role_arn" {
 output "github_oidc_provider_arn" {
   value = local.github_oidc_provider_arn
 }
+
+output "github_oidc_subject" {
+  value = local.github_sub
+}

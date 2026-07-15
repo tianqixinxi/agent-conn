@@ -4,5 +4,9 @@ environment       = "production"
 github_repository = "your-org/agent-comm"
 github_environment = "production"
 
+# Repositories using GitHub immutable OIDC subjects must include the owner and
+# repository IDs returned by the repository OIDC customization endpoint.
+# github_oidc_subject_prefix = "repo:your-org@123456/agent-comm@789012"
+
 # Set this only when the AWS account already has the GitHub Actions provider.
 # github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"

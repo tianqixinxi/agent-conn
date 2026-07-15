@@ -1,10 +1,11 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  name          = "${var.project_name}-${var.environment}"
-  state_bucket  = "${local.name}-tfstate-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
-  backup_bucket = "${local.name}-backups-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
-  github_sub    = "repo:${var.github_repository}:environment:${var.github_environment}"
+  name                = "${var.project_name}-${var.environment}"
+  state_bucket        = "${local.name}-tfstate-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  backup_bucket       = "${local.name}-backups-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  github_repo_subject = var.github_oidc_subject_prefix != null ? var.github_oidc_subject_prefix : "repo:${var.github_repository}"
+  github_sub          = "${local.github_repo_subject}:environment:${var.github_environment}"
 }
 
 data "tls_certificate" "github" {

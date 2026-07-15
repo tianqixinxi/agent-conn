@@ -23,6 +23,13 @@ variable "github_repository" {
   }
 }
 
+variable "github_oidc_subject_prefix" {
+  description = "Optional immutable GitHub OIDC repo prefix, for example repo:owner@OWNER_ID/repo@REPO_ID."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "github_environment" {
   description = "Protected GitHub Environment used by infrastructure and deployment jobs."
   type        = string

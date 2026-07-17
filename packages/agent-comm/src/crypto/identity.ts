@@ -7,10 +7,9 @@ import {
   generateKeyPairSync,
   type KeyObject,
 } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import type { NodeIdentity } from '@agent-comm/protocol'
 import { NODE_ID_PREFIX } from '@agent-comm/protocol'
+import { createPrivateFile, readPrivateFile } from './secure-file.js'
 
 /**
  * W1 实现处:NodeIdentity(§2.3)。全部用 node:crypto,零外部依赖(D4)。
@@ -34,33 +33,28 @@ function exportPublicKeyB64url(key: KeyObject): string {
 }
 
 function identityFromPrivateKeyObject(privateKeyObj: KeyObject, identityKeyPath: string): NodeIdentity {
-  const publicKeyObj = createPublicKey(privateKeyObj)
+  const exportedPrivateKey = privateKeyObj.export({ type: 'pkcs8', format: 'pem' })
+  const publicKeyObj = createPublicKey(exportedPrivateKey)
   const publicKey = exportPublicKeyB64url(publicKeyObj)
   return { nodeId: deriveNodeId(publicKey), publicKey, privateKeyRef: identityKeyPath, relays: [] }
 }
 
 export async function ensureIdentity(paths: { identityKeyPath: string }): Promise<NodeIdentity> {
   const { identityKeyPath } = paths
-  if (existsSync(identityKeyPath)) {
-    const pem = readFileSync(identityKeyPath, 'utf8')
-    const privateKeyObj = createPrivateKey(pem)
-    return identityFromPrivateKeyObject(privateKeyObj, identityKeyPath)
-  }
-
-  mkdirSync(dirname(identityKeyPath), { recursive: true, mode: 0o700 })
   const { privateKey } = generateKeyPairSync('ed25519')
   const pem = privateKey.export({ type: 'pkcs8', format: 'pem' })
   if (typeof pem !== 'string') {
     throw new TypeError('unexpected non-string PKCS8 PEM export for ed25519 private key')
   }
-  writeFileSync(identityKeyPath, pem, { mode: 0o600 })
-  // writeFileSync 的 mode 受 umask 影响,显式 chmod 兜底(任务要求 0600)
-  chmodSync(identityKeyPath, 0o600)
-  return identityFromPrivateKeyObject(privateKey, identityKeyPath)
+  if (createPrivateFile(identityKeyPath, pem)) {
+    return identityFromPrivateKeyObject(privateKey, identityKeyPath)
+  }
+  const existingPem = readPrivateFile(identityKeyPath)
+  return identityFromPrivateKeyObject(createPrivateKey(existingPem), identityKeyPath)
 }
 
 export async function signCanonical(identityKeyPath: string, canonical: string): Promise<string> {
-  const pem = readFileSync(identityKeyPath, 'utf8')
+  const pem = readPrivateFile(identityKeyPath)
   const privateKeyObj = createPrivateKey(pem)
   const signature = cryptoSign(null, Buffer.from(canonical, 'utf8'), privateKeyObj)
   return signature.toString('base64url')

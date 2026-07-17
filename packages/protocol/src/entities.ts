@@ -31,6 +31,10 @@ export type Home = z.infer<typeof HomeSchema>
 export const ChannelModeSchema = z.enum(['auto', 'intercept', 'paused'])
 export type ChannelMode = z.infer<typeof ChannelModeSchema>
 
+/** Private channels are E2E encrypted; public channels are plaintext and browser-readable. */
+export const ChannelVisibilitySchema = z.enum(['private', 'public'])
+export type ChannelVisibility = z.infer<typeof ChannelVisibilitySchema>
+
 export const MsgStatusSchema = z.enum(['pending', 'held', 'delivered', 'dropped'])
 export type MsgStatus = z.infer<typeof MsgStatusSchema>
 
@@ -60,6 +64,7 @@ export const ChannelSchema = z.object({
   home: HomeSchema,
   displayName: z.string().optional(),
   mode: ChannelModeSchema.default('auto'),
+  visibility: ChannelVisibilitySchema.default('private'),
   description: z.string().optional(),
   createdAt: IsoSchema,
 })
@@ -166,7 +171,7 @@ export const PendingApprovalSchema = z.object({
   requester: AliasSchema,
   approver: AliasSchema,
   action: z.string().min(1),
-  args: z.record(z.unknown()).optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
   allowAccept: z.boolean().optional(),
   allowEdit: z.boolean().optional(),
   allowReject: z.boolean().optional(),
@@ -179,7 +184,7 @@ export type PendingApproval = z.infer<typeof PendingApprovalSchema>
 export const SignedDecisionSchema = z.object({
   approvalId: z.string().min(1),
   decision: z.enum(['accept', 'edit', 'reject']),
-  args: z.record(z.unknown()).optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
   approver: z.object({
     id: z.string().min(1),
     method: z.enum(['oauth', 'passkey', 'magic-link', 'sigstore']),

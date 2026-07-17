@@ -36,14 +36,14 @@ export const PostResultSchema = z.object({
 export const AskSchema = z.object({ question: z.string() })
 export const RequestApprovalSchema = z.object({
   action: z.string(),
-  args: z.record(z.unknown()).optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
   allowAccept: z.boolean().optional(),
   allowEdit: z.boolean().optional(),
   allowReject: z.boolean().optional(),
 })
 export const ApprovalDecisionSchema = z.object({
   decision: z.enum(['accept', 'edit', 'reject']),
-  args: z.record(z.unknown()).optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
 })
 export const HandoffSchema = z.object({ task: z.string(), contextRef: z.string().optional() })
 export const AckPayloadSchema = z.object({ messageId: z.string() })

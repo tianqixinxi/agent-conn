@@ -92,6 +92,7 @@ export class FakeEngine implements Engine {
       alias: string
       displayName?: string | undefined
       mode?: Channel['mode'] | undefined
+      visibility?: Channel['visibility'] | undefined
       description?: string | undefined
       home?: string | undefined
     },
@@ -102,6 +103,7 @@ export class FakeEngine implements Engine {
       name: input.name,
       home: input.home ?? 'local:/fake/local-hub.db',
       mode: input.mode ?? 'auto',
+      visibility: input.visibility ?? 'private',
       createdAt: nowIso(),
       ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
       ...(input.description === undefined ? {} : { description: input.description }),

@@ -3,6 +3,7 @@ import type {
   AuditEntry,
   Channel,
   ChannelMode,
+  ChannelVisibility,
   InviteScope,
   Message,
   NodeIdentity,
@@ -110,6 +111,7 @@ export interface Engine {
       alias: string
       displayName?: string | undefined
       mode?: ChannelMode | undefined
+      visibility?: ChannelVisibility | undefined
       description?: string | undefined
       /** 缺省 = 默认 local hub(config.defaultHubPath) */
       home?: string | undefined

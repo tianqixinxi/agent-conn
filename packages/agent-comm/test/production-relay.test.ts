@@ -52,4 +52,41 @@ describe('engine + production relay + E2E', () => {
       ws.cleanup()
     }
   })
+
+  it('keeps public channels plaintext and marks their invitation explicitly public', async () => {
+    const ws = createTmpWorkspace()
+    const alice = await createEngine(ws.profile('public-alice'))
+    const bob = await createEngine(ws.profile('public-bob'))
+    const aliceIdentity = await alice.identity()
+    const bobIdentity = await bob.identity()
+    const relay = await createFakeRelay([
+      { nodeId: aliceIdentity.nodeId, publicKey: aliceIdentity.publicKey },
+      { nodeId: bobIdentity.nodeId, publicKey: bobIdentity.publicKey },
+    ])
+
+    try {
+      await alice.createChannel(
+        { name: 'open-lab', alias: 'alice', home: relay.url, visibility: 'public' },
+        'agent:alice',
+      )
+      const { link } = await alice.createInvite({ channel: 'open-lab', maxUses: 1 }, 'agent:alice')
+      expect(new URL(link).hash).toBe('#v=public')
+
+      await bob.connect({ link, alias: 'bob' }, 'agent:bob')
+      await alice.send(
+        { channel: 'open-lab', to: '*', payload: { text: 'public update' }, contentType: 'application/json' },
+        'agent:alice',
+      )
+
+      const stored = relay.channels.get('open-lab')?.messages[0]?.envelope
+      expect(stored?.payload).toEqual({ text: 'public update' })
+      expect(stored?.contentType).toBe('application/json')
+      await expect(bob.readInbox({ consume: true })).resolves.toMatchObject([
+        { channel: 'open-lab', payload: { text: 'public update' } },
+      ])
+    } finally {
+      await Promise.all([alice.close(), bob.close(), relay.close()])
+      ws.cleanup()
+    }
+  })
 })

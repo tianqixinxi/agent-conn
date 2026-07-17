@@ -39,6 +39,7 @@ interface FakeMember {
 
 interface FakeChannel {
   mode: 'auto' | 'intercept' | 'paused'
+  visibility: 'private' | 'public'
   members: FakeMember[]
   messages: StoredMessage[]
   byMessageId: Map<string, StoredMessage>
@@ -57,7 +58,10 @@ export interface FakeRelay {
   readonly channels: Map<string, FakeChannel>
   readonly requestLog: RequestLogEntry[]
   /** 直接建频道(绕开 createChannel——relay v1 本就没有远程建频道端点) */
-  seedChannel(name: string, opts?: { mode?: FakeChannel['mode'] }): void
+  seedChannel(
+    name: string,
+    opts?: { mode?: FakeChannel['mode']; visibility?: FakeChannel['visibility'] },
+  ): void
   /** 直接注册一个可兑换的 joinToken → channel 映射(绕开真实邀请铸造流程) */
   seedInvite(joinToken: string, channel: string): void
   /** 让某频道下一次 POST messages 返回 429 RATE_LIMITED,消费一次即失效 */
@@ -106,8 +110,11 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
   const rateLimitOnce = new Map<string, number>()
   const requestLog: RequestLogEntry[] = []
 
-  function newChannel(mode: FakeChannel['mode']): FakeChannel {
-    return { mode, members: [], messages: [], byMessageId: new Map(), seq: 0, cursors: new Map() }
+  function newChannel(
+    mode: FakeChannel['mode'],
+    visibility: FakeChannel['visibility'] = 'private',
+  ): FakeChannel {
+    return { mode, visibility, members: [], messages: [], byMessageId: new Map(), seq: 0, cursors: new Map() }
   }
 
   const server = createServer((req, res) => {
@@ -165,6 +172,7 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
         jsonSend(res, 200, {
           channel: channelName,
           mode: ch.mode,
+          visibility: ch.visibility,
           myAlias: parsed.data.alias,
           members: ch.members.map((m) => ({ alias: m.alias, nodeId: m.nodeId, card: m.card })),
         })
@@ -196,7 +204,7 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
           })
           return
         }
-        const created = newChannel(parsed.data.mode ?? 'auto')
+        const created = newChannel(parsed.data.mode ?? 'auto', parsed.data.visibility ?? 'private')
         created.members.push({
           alias: parsed.data.alias,
           nodeId: parsed.data.node.nodeId,
@@ -207,6 +215,7 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
         jsonSend(res, 200, {
           channel: channelName,
           mode: created.mode,
+          visibility: created.visibility,
           myAlias: parsed.data.alias,
           members: created.members.map((m) => ({ alias: m.alias, nodeId: m.nodeId, card: m.card })),
         })
@@ -326,7 +335,7 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
         channels,
         requestLog,
         seedChannel(name, opts) {
-          channels.set(name, newChannel(opts?.mode ?? 'auto'))
+          channels.set(name, newChannel(opts?.mode ?? 'auto', opts?.visibility ?? 'private'))
         },
         seedInvite(joinToken, channel) {
           invites.set(joinToken, channel)

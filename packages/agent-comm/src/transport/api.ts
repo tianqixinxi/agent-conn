@@ -1,6 +1,7 @@
 import type {
   AgentCard,
   ChannelMode,
+  ChannelVisibility,
   InviteScope,
   Message,
   MessageEnvelope,
@@ -21,6 +22,7 @@ export interface TransportBinding {
     name: string
     displayName?: string | undefined
     mode?: ChannelMode | undefined
+    visibility?: ChannelVisibility | undefined
     description?: string | undefined
     member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
   }): Promise<void>
@@ -32,7 +34,14 @@ export interface TransportBinding {
   }): Promise<{
     channel: string
     mode: ChannelMode
-    members: { alias: string; nodeId: string; card?: AgentCard | undefined }[]
+    visibility: ChannelVisibility
+    members: {
+      alias: string
+      nodeId: string
+      card?: AgentCard | undefined
+      lastSeenAt?: string | undefined
+      online?: boolean | undefined
+    }[]
     scope?: InviteScope | undefined
   }>
 
@@ -46,7 +55,15 @@ export interface TransportBinding {
     maxUses?: number | undefined
   }): Promise<{ joinToken: string; expiresAt?: string | undefined }>
 
-  members(channel: string): Promise<{ alias: string; nodeId: string; card?: AgentCard | undefined }[]>
+  members(channel: string): Promise<
+    {
+      alias: string
+      nodeId: string
+      card?: AgentCard | undefined
+      lastSeenAt?: string | undefined
+      online?: boolean | undefined
+    }[]
+  >
   updateCard(input: { channel: string; alias: string; nodeId: string; card: AgentCard }): Promise<void>
 
   append(

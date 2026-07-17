@@ -5,6 +5,7 @@ import {
   type AgentCard,
   AgentCommError,
   type ChannelMode,
+  type ChannelVisibility,
   ICEBREAK_DEFAULTS,
   type InviteScope,
   type Message,
@@ -28,6 +29,7 @@ interface ChannelRow {
   name: string
   display_name: string | null
   mode: ChannelMode
+  visibility: ChannelVisibility
   description: string | null
   head_seq: number
   created_at: string
@@ -41,6 +43,7 @@ export interface MemberRow {
   scope_json: string | null
   card_json: string | null
   joined_at: string
+  last_seen_at: string
   join_seq: number
 }
 
@@ -81,6 +84,8 @@ const RETENTION_ACKED_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const ICEBREAK_RETRY_AFTER_MS = 60_000
 /** DatabaseSync busy_timeout(ms);高于 agent-comm/store 注释建议的 2000ms 下限 */
 const BUSY_TIMEOUT_MS = 5_000
+/** A runtime is considered online while signed channel activity renews this soft lease. */
+export const PRESENCE_LEASE_MS = 45_000
 
 // ———————————————————————————————————————————— 打开 / schema
 
@@ -100,6 +105,15 @@ export function openDb(dbPath: string): RelayDb {
   raw.exec('PRAGMA foreign_keys = ON')
   const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
   raw.exec(schemaSql)
+  const channelColumns = raw.prepare("PRAGMA table_info('channels')").all() as { name: string }[]
+  if (!channelColumns.some((column) => column.name === 'visibility')) {
+    raw.exec("ALTER TABLE channels ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
+  }
+  const memberColumns = raw.prepare("PRAGMA table_info('members')").all() as { name: string }[]
+  if (!memberColumns.some((column) => column.name === 'last_seen_at')) {
+    raw.exec('ALTER TABLE members ADD COLUMN last_seen_at TEXT')
+    raw.exec('UPDATE members SET last_seen_at = joined_at WHERE last_seen_at IS NULL')
+  }
   const db: RelayDb = { raw }
   // 启动时清一遍所有频道(D8:不装定时任务,只在启动 + 每次写后惰性清理)
   const rows = raw.prepare('SELECT name FROM channels').all() as { name: string }[]
@@ -135,7 +149,11 @@ export function requireMember(db: RelayDb, channel: string, nodeId: string): Mem
   if (!chRow) throw new AgentCommError('CHANNEL_NOT_FOUND', `channel not found: ${channel}`)
   const member = getMemberByChannelNode(db, channel, nodeId)
   if (!member) throw new AgentCommError('NOT_MEMBER', `node is not a member of channel: ${channel}`)
-  return member
+  const lastSeenAt = nowIso()
+  db.raw
+    .prepare('UPDATE members SET last_seen_at = ? WHERE channel = ? AND node_id = ?')
+    .run(lastSeenAt, channel, nodeId)
+  return { ...member, last_seen_at: lastSeenAt }
 }
 
 // ———————————————————————————————————————————— 频道 + 成员 → wire 响应形状
@@ -143,8 +161,15 @@ export function requireMember(db: RelayDb, channel: string, nodeId: string): Mem
 export interface JoinLikeResult {
   channel: string
   mode: ChannelMode
+  visibility: ChannelVisibility
   myAlias: string
-  members: { alias: string; nodeId: string; card?: AgentCard }[]
+  members: {
+    alias: string
+    nodeId: string
+    card?: AgentCard
+    lastSeenAt: string
+    online: boolean
+  }[]
 }
 
 export function listMembers(db: RelayDb, channel: string): MemberRow[] {
@@ -153,11 +178,151 @@ export function listMembers(db: RelayDb, channel: string): MemberRow[] {
     .all(channel) as unknown as MemberRow[]
 }
 
-export function memberRowToWire(m: MemberRow): { alias: string; nodeId: string; card?: AgentCard } {
+export interface PublicChannelSummary {
+  name: string
+  displayName?: string | undefined
+  description?: string | undefined
+  createdAt: string
+  members: number
+  messages: number
+  onlineMembers: number
+  lastActivityAt?: string | undefined
+}
+
+export interface PublicChannelMessage {
+  seq: number
+  messageId: string
+  from: string
+  to: string
+  contentType?: string | undefined
+  payload: unknown
+  ts: string
+}
+
+function publicSummaryFromRow(row: {
+  name: string
+  display_name: string | null
+  description: string | null
+  created_at: string
+  member_count: number
+  message_count: number
+  online_member_count: number
+  last_activity_at: string | null
+}): PublicChannelSummary {
+  return {
+    name: row.name,
+    ...(row.display_name ? { displayName: row.display_name } : {}),
+    ...(row.description ? { description: row.description } : {}),
+    createdAt: row.created_at,
+    members: row.member_count,
+    messages: row.message_count,
+    onlineMembers: row.online_member_count,
+    ...(row.last_activity_at ? { lastActivityAt: row.last_activity_at } : {}),
+  }
+}
+
+const PUBLIC_SUMMARY_SELECT = `
+  SELECT c.name, c.display_name, c.description, c.created_at,
+    (SELECT COUNT(*) FROM members mb WHERE mb.channel = c.name) AS member_count,
+    (SELECT COUNT(*) FROM messages msg WHERE msg.channel = c.name AND msg.status = 'delivered') AS message_count,
+    (SELECT COUNT(*) FROM members online_mb WHERE online_mb.channel = c.name
+      AND unixepoch(online_mb.last_seen_at) >= unixepoch('now') - ${PRESENCE_LEASE_MS / 1000}) AS online_member_count,
+    (SELECT MAX(msg.ts) FROM messages msg WHERE msg.channel = c.name AND msg.status = 'delivered') AS last_activity_at
+  FROM channels c
+`
+
+export function listPublicChannels(db: RelayDb): PublicChannelSummary[] {
+  const rows = db.raw
+    .prepare(
+      `${PUBLIC_SUMMARY_SELECT} WHERE c.visibility = 'public' ORDER BY last_activity_at DESC, c.created_at DESC`,
+    )
+    .all() as unknown as Parameters<typeof publicSummaryFromRow>[0][]
+  return rows.map(publicSummaryFromRow)
+}
+
+export function getPublicChannel(db: RelayDb, channel: string): PublicChannelSummary | undefined {
+  const row = db.raw
+    .prepare(`${PUBLIC_SUMMARY_SELECT} WHERE c.visibility = 'public' AND c.name = ?`)
+    .get(channel) as Parameters<typeof publicSummaryFromRow>[0] | undefined
+  return row ? publicSummaryFromRow(row) : undefined
+}
+
+export function listPublicChannelMessages(
+  db: RelayDb,
+  channel: string,
+  after: number,
+  limit: number,
+): PublicChannelMessage[] | undefined {
+  if (!getPublicChannel(db, channel)) return undefined
+  const rows = db.raw
+    .prepare(
+      `SELECT seq, message_id, envelope_json, ts FROM messages
+       WHERE channel = ? AND status = 'delivered' AND seq > ? ORDER BY seq ASC LIMIT ?`,
+    )
+    .all(channel, after, limit) as unknown as {
+    seq: number
+    message_id: string
+    envelope_json: string
+    ts: string
+  }[]
+  return rows.map((row) => {
+    const envelope = JSON.parse(row.envelope_json) as WireEnvelope
+    return {
+      seq: row.seq,
+      messageId: row.message_id,
+      from: envelope.from,
+      to: envelope.to,
+      ...(envelope.contentType ? { contentType: envelope.contentType } : {}),
+      payload: envelope.payload,
+      ts: row.ts,
+    }
+  })
+}
+
+export function listRecentPublicChannelMessages(
+  db: RelayDb,
+  channel: string,
+  limit: number,
+): PublicChannelMessage[] | undefined {
+  if (!getPublicChannel(db, channel)) return undefined
+  const rows = db.raw
+    .prepare(
+      `SELECT seq, message_id, envelope_json, ts FROM messages
+       WHERE channel = ? AND status = 'delivered' ORDER BY seq DESC LIMIT ?`,
+    )
+    .all(channel, limit) as unknown as {
+    seq: number
+    message_id: string
+    envelope_json: string
+    ts: string
+  }[]
+  return rows.reverse().map((row) => {
+    const envelope = JSON.parse(row.envelope_json) as WireEnvelope
+    return {
+      seq: row.seq,
+      messageId: row.message_id,
+      from: envelope.from,
+      to: envelope.to,
+      ...(envelope.contentType ? { contentType: envelope.contentType } : {}),
+      payload: envelope.payload,
+      ts: row.ts,
+    }
+  })
+}
+
+export function memberRowToWire(m: MemberRow): {
+  alias: string
+  nodeId: string
+  card?: AgentCard
+  lastSeenAt: string
+  online: boolean
+} {
   return {
     alias: m.alias,
     nodeId: m.node_id,
     ...(m.card_json ? { card: JSON.parse(m.card_json) as AgentCard } : {}),
+    lastSeenAt: m.last_seen_at,
+    online: Date.now() - Date.parse(m.last_seen_at) <= PRESENCE_LEASE_MS,
   }
 }
 
@@ -170,6 +335,7 @@ function buildJoinLikeResult(
   return {
     channel,
     mode,
+    visibility: getChannelRow(db, channel)?.visibility ?? 'private',
     myAlias,
     members: listMembers(db, channel).map(memberRowToWire),
   }
@@ -216,6 +382,7 @@ export function createChannelBootstrap(
     nodeId: string
     publicKey: string
     mode?: ChannelMode
+    visibility?: ChannelVisibility
     displayName?: string
     description?: string
     card?: AgentCard
@@ -225,18 +392,19 @@ export function createChannelBootstrap(
     throw new AgentCommError('CHANNEL_EXISTS', `channel already exists: ${args.channel}`)
   }
   const mode: ChannelMode = args.mode ?? 'auto'
+  const visibility: ChannelVisibility = args.visibility ?? 'private'
   db.raw.exec('BEGIN')
   try {
     db.raw
       .prepare(
-        `INSERT INTO channels (name, display_name, mode, description, head_seq, created_at)
-         VALUES (?, ?, ?, ?, 0, ?)`,
+        `INSERT INTO channels (name, display_name, mode, visibility, description, head_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?)`,
       )
-      .run(args.channel, args.displayName ?? null, mode, args.description ?? null, nowIso())
+      .run(args.channel, args.displayName ?? null, mode, visibility, args.description ?? null, nowIso())
     db.raw
       .prepare(
-        `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, join_seq)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, 0)`,
+        `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, last_seen_at, join_seq)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 0)`,
       )
       .run(
         args.channel,
@@ -244,6 +412,7 @@ export function createChannelBootstrap(
         args.nodeId,
         args.publicKey,
         args.card ? JSON.stringify(args.card) : null,
+        nowIso(),
         nowIso(),
       )
     insertAudit(db, {
@@ -284,6 +453,9 @@ export function joinViaInvite(
   if (existingByAlias) {
     if (existingByAlias.node_id === args.nodeId) {
       // 同 (nodeId, alias) 重复 join:幂等返回现状,不重复扣 uses / 不重复插入(工单原文)
+      db.raw
+        .prepare('UPDATE members SET last_seen_at = ? WHERE channel = ? AND node_id = ?')
+        .run(nowIso(), channel, args.nodeId)
       return buildJoinLikeResult(db, channel, args.alias, chRow.mode)
     }
     throw new AgentCommError('ALIAS_TAKEN', `alias already taken in channel: ${args.alias}`)
@@ -312,8 +484,8 @@ export function joinViaInvite(
     db.raw.prepare('UPDATE invites SET uses = uses + 1 WHERE token_hash = ?').run(tokenHash)
     db.raw
       .prepare(
-        `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, join_seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, last_seen_at, join_seq)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         channel,
@@ -322,6 +494,7 @@ export function joinViaInvite(
         args.publicKey,
         invite.scope_json,
         args.card ? JSON.stringify(args.card) : null,
+        nowIso(),
         nowIso(),
         chRow.head_seq,
       )

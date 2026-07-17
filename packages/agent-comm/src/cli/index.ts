@@ -11,7 +11,7 @@ import { defaultHostEnv, detectHostRegistrations } from './host.js'
 import { checkLine, printResult, summarizePayload } from './output.js'
 
 /**
- * W2 实现处:CLI 伴侣(人类面,T3 + 引导;DESIGN §3)。commander(实测 v14.0.3)。
+ * W2 实现处:CLI 伴侣(人类面,T3 + 引导;DESIGN §3)。commander 15。
  *
  * 命令树(全局 --profile <name>,--json;默认 profile = env AGENT_COMM_PROFILE 或 'default'):
  *   init                                     生成/加载身份(幂等),打印 nodeId
@@ -184,22 +184,45 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
     .description('创建一个新频道(默认以本机共享 hub 为家)')
     .argument('<name>', '频道名')
     .argument('<alias>', '我在频道内的别名')
+    .option('--home <url>', '频道 home;缺省为本机 hub')
     .option('--display-name <name>', '展示名')
     .option('--mode <mode>', `投递模式:${MODES.join('|')}`)
+    .option('--visibility <visibility>', '可见性:private|public', 'private')
     .option('--description <text>', '描述')
     .action(
       async (
         name: string,
         alias: string,
-        cmdOpts: { displayName?: string; mode?: string; description?: string },
+        cmdOpts: {
+          home?: string
+          displayName?: string
+          mode?: string
+          visibility?: string
+          description?: string
+        },
       ) => {
         const c = requireCtx()
         const mode = cmdOpts.mode === undefined ? undefined : parseMode(cmdOpts.mode)
+        if (cmdOpts.visibility !== 'private' && cmdOpts.visibility !== 'public') {
+          throw new AgentCommError('INVALID_INPUT', 'visibility must be private or public')
+        }
         const channel = await c.engine.createChannel(
-          { name, alias, displayName: cmdOpts.displayName, mode, description: cmdOpts.description },
+          {
+            name,
+            alias,
+            home: cmdOpts.home,
+            displayName: cmdOpts.displayName,
+            mode,
+            visibility: cmdOpts.visibility,
+            description: cmdOpts.description,
+          },
           'human',
         )
-        printResult(c, channel, `已创建频道 ${channel.name}(mode=${channel.mode})`)
+        printResult(
+          c,
+          channel,
+          `已创建频道 ${channel.name}(mode=${channel.mode}, visibility=${channel.visibility})`,
+        )
       },
     )
 

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
   display_name TEXT,
   mode TEXT NOT NULL DEFAULT 'auto',    -- auto|intercept|paused;门在家(§2.2)
+  visibility TEXT NOT NULL DEFAULT 'private', -- private(E2E)|public(plaintext/browser-readable)
   description TEXT,
   -- 本频道累计分配过的最大 seq。独立于 messages 表存在,是为了让 retention 清理(删旧消息)
   -- 不影响 seq 单调性与 GetMessagesRespSchema.head 的正确性(否则频道被清空后 MAX(seq) 会归零)。
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS members (
   scope_json TEXT,
   card_json TEXT,
   joined_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,            -- signed activity renews a soft presence lease
   join_seq INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (channel, alias)
 ) STRICT;

@@ -16,6 +16,7 @@ describe('store/openStore (private store repos)', () => {
         name: 'daily',
         home: 'local:/tmp/hub.db',
         mode: 'auto',
+        visibility: 'private',
         myAlias: 'alice',
         scope: { canSendTo: ['bob', '*'] },
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -123,6 +124,7 @@ describe('store/openStore (private store repos)', () => {
         name: 'daily',
         home: 'local:/tmp/hub.db',
         mode: 'auto',
+        visibility: 'private',
         myAlias: 'alice',
         createdAt: '2026-01-01T00:00:00.000Z',
       })
@@ -146,7 +148,12 @@ describe('store/openHubDb (shared local hub repos)', () => {
   it('round-trips hub_channels/hub_members and assigns monotonic seq via nextSeq', () => {
     const hub = openHubDb(join(ws.rootDir, 'hub.db'))
     try {
-      hub.channels.insert({ name: 'daily', mode: 'auto', createdAt: '2026-01-01T00:00:00.000Z' })
+      hub.channels.insert({
+        name: 'daily',
+        mode: 'auto',
+        visibility: 'private',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
       expect(hub.channels.get('daily')?.mode).toBe('auto')
 
       hub.members.insert({
@@ -205,7 +212,12 @@ describe('store/openHubDb (shared local hub repos)', () => {
   it('withTx rolls back all writes on error', () => {
     const hub = openHubDb(join(ws.rootDir, 'hub3.db'))
     try {
-      hub.channels.insert({ name: 'daily', mode: 'auto', createdAt: '2026-01-01T00:00:00.000Z' })
+      hub.channels.insert({
+        name: 'daily',
+        mode: 'auto',
+        visibility: 'private',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      })
       expect(() =>
         hub.withTx(() => {
           hub.members.insert({ channel: 'daily', alias: 'alice', nodeId: 'n-1', joinedAt: 'now' })

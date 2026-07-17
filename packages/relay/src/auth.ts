@@ -45,11 +45,14 @@ export function verifySignature(
   }
 }
 
-/** 健康检查、邀请页与 A2A AgentCard 是公开发现端点，不要求签名。 */
+/** 健康检查、安装/公开频道、邀请页与 A2A AgentCard 是公开发现端点，不要求签名。 */
 function isPublicRoute(method: string, pathname: string): boolean {
+  if (method !== 'GET') return false
+  if (pathname === '/' || pathname === '/public') return true
   if (method === 'GET' && pathname === '/healthz') return true
   if (method === 'GET' && pathname === '/.well-known/agent-card.json') return true
-  if (method === 'GET' && /^\/j\/[^/]+$/.test(pathname)) return true
+  if (pathname.startsWith('/public/') || pathname.startsWith('/api/public/')) return true
+  if (pathname.startsWith('/j/') && !pathname.slice(3).includes('/')) return true
   return false
 }
 

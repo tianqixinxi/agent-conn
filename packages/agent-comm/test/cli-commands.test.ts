@@ -115,10 +115,24 @@ describe('runCli', () => {
   })
 
   it('channels create/mode use human actor; bare "channels" defaults to ls', async () => {
-    await run(['channels', 'create', 'daily', 'lead', '--mode', 'intercept'])
+    await run([
+      'channels',
+      'create',
+      'daily',
+      'lead',
+      '--home',
+      'https://connect.meee1.com',
+      '--mode',
+      'intercept',
+    ])
     const createCall = engine.calls.find((c) => c.method === 'createChannel')
     expect(createCall?.actor).toBe('human')
-    expect(createCall?.args[0]).toMatchObject({ name: 'daily', alias: 'lead', mode: 'intercept' })
+    expect(createCall?.args[0]).toMatchObject({
+      name: 'daily',
+      alias: 'lead',
+      home: 'https://connect.meee1.com',
+      mode: 'intercept',
+    })
 
     out.length = 0
     await run(['channels'])

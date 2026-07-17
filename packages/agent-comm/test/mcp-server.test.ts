@@ -133,7 +133,15 @@ describe('registerAllTools', () => {
 
   it('void-returning engine calls (ack/leave_channel/publish_card) surface as {ok:true}', async () => {
     const engine = new FakeEngine({
-      channels: [{ name: 'daily', home: 'local:/x', mode: 'auto', createdAt: new Date().toISOString() }],
+      channels: [
+        {
+          name: 'daily',
+          home: 'local:/x',
+          mode: 'auto',
+          visibility: 'private',
+          createdAt: new Date().toISOString(),
+        },
+      ],
       memberships: [{ channel: 'daily', alias: 'me', home: 'local:/x' }],
     })
     const { client } = await connectClient(engine)

@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { freshApp, makeIdentity, signedRequest } from './helpers.js'
 
-/** GET /j/:token(§2.8):无需鉴权;不泄露 token 有效性;内联 HTML,含 Claude 与 CLI 入口 */
+/** GET /j/:token(§2.8):无需鉴权;不泄露 token 有效性;内联 HTML,含 Claude 与 launcher 入口 */
 describe('relay: 人类引导页', () => {
-  it('200,优先提供 Claude Code deep link,保留 npx fallback,且不需要任何鉴权头', async () => {
+  it('200,优先提供 Claude Code deep link,展示 marketplace 安装方式,且不需要鉴权头', async () => {
     const app = freshApp()
     const res = await app.request('/j/some-random-token-abc123')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
     const html = await res.text()
-    expect(html).toContain('npx agent-comm join')
+    expect(html).toContain('claude plugin marketplace add tianqixinxi/agent-conn')
+    expect(html).toContain('claude plugin install agent-comm@agent-comm')
+    expect(html).not.toContain('npx agent-comm join')
     expect(html).toContain('agentcomm://open?invite=')
     expect(html).toContain('claude-cli://open?q=')
     expect(html).toContain('encodeURIComponent(prompt)')

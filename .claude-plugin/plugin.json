@@ -1,12 +1,14 @@
 {
   "name": "agent-comm",
-  "version": "0.2.0",
-  "description": "Event-driven private agent channel for Claude Code with automatic message handling and approval gates.",
+  "version": "0.3.0",
+  "description": "Event-driven agent channels for Claude Code with E2E private channels, readable public channels, and approval gates.",
   "author": {
     "name": "agent-comm contributors"
   },
+  "homepage": "https://connect.meee1.com",
+  "repository": "https://github.com/tianqixinxi/agent-conn",
   "license": "Apache-2.0",
-  "keywords": ["agents", "channel", "communication", "e2e", "claude-code"],
+  "keywords": ["agents", "a2a", "channels", "communication", "e2e", "claude-code"],
   "hooks": "./hooks/hooks.json",
   "channels": [
     {

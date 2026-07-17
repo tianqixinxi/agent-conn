@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
-import type { AgentCard, AuditEvent, ChannelMode, InviteScope, MsgStatus } from '@agent-comm/protocol'
+import type {
+  AgentCard,
+  AuditEvent,
+  ChannelMode,
+  ChannelVisibility,
+  InviteScope,
+  MsgStatus,
+} from '@agent-comm/protocol'
 import {
   openDb,
   optNum,
@@ -65,6 +72,7 @@ export interface StoreChannelRow {
   home: string
   displayName?: string | undefined
   mode: ChannelMode
+  visibility: ChannelVisibility
   description?: string | undefined
   myAlias: string
   scope?: InviteScope | undefined
@@ -78,6 +86,7 @@ function toChannelRow(row: Row): StoreChannelRow {
     home: reqStr(row, 'home'),
     displayName: optStr(row, 'display_name'),
     mode: reqStr(row, 'mode') as ChannelMode,
+    visibility: reqStr(row, 'visibility') as ChannelVisibility,
     description: optStr(row, 'description'),
     myAlias: reqStr(row, 'my_alias'),
     scope: parseJsonOpt<InviteScope>(optStr(row, 'scope_json')),
@@ -91,12 +100,13 @@ function createChannelsRepo(db: DatabaseSync) {
   const listStmt = db.prepare('SELECT * FROM channels ORDER BY created_at ASC')
   const countStmt = db.prepare('SELECT COUNT(*) as c FROM channels')
   const upsertStmt = db.prepare(`
-    INSERT INTO channels (name, home, display_name, mode, description, my_alias, scope_json, e2e_key_ref, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO channels (name, home, display_name, mode, visibility, description, my_alias, scope_json, e2e_key_ref, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       home = excluded.home,
       display_name = excluded.display_name,
       mode = excluded.mode,
+      visibility = excluded.visibility,
       description = excluded.description,
       my_alias = excluded.my_alias,
       scope_json = excluded.scope_json,
@@ -122,6 +132,7 @@ function createChannelsRepo(db: DatabaseSync) {
         row.home,
         row.displayName ?? null,
         row.mode,
+        row.visibility,
         row.description ?? null,
         row.myAlias,
         toJsonOpt(row.scope),
@@ -525,6 +536,10 @@ export interface StoreHandle {
 
 export function openStore(path: string): StoreHandle {
   const db = openDb(path, STORE_SCHEMA_SQL)
+  const channelColumns = db.prepare("PRAGMA table_info('channels')").all() as Row[]
+  if (!channelColumns.some((row) => reqStr(row, 'name') === 'visibility')) {
+    db.exec("ALTER TABLE channels ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
+  }
   return {
     path,
     db,

@@ -1,11 +1,14 @@
-import { statSync } from 'node:fs'
+import { readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureIdentity, signCanonical, verifyCanonical } from '../src/crypto/identity.js'
-import { createTmpWorkspace } from './helpers/tmp-profile.js'
+import { createTmpWorkspace, type TmpWorkspace } from './helpers/tmp-profile.js'
 
 describe('crypto/identity', () => {
-  const ws = createTmpWorkspace()
+  let ws: TmpWorkspace
+  beforeEach(() => {
+    ws = createTmpWorkspace()
+  })
   afterEach(() => ws.cleanup())
 
   it('generates a keypair on first call and writes the private key file chmod 0600', async () => {
@@ -31,6 +34,15 @@ describe('crypto/identity', () => {
     const a = await ensureIdentity({ identityKeyPath: join(ws.rootDir, 'a', 'identity.key') })
     const b = await ensureIdentity({ identityKeyPath: join(ws.rootDir, 'b', 'identity.key') })
     expect(a.nodeId).not.toBe(b.nodeId)
+  })
+
+  it('refuses to follow an identity-key symlink', async () => {
+    const target = join(ws.rootDir, 'outside.key')
+    const keyPath = join(ws.rootDir, 'linked-identity.key')
+    writeFileSync(target, 'not a private key')
+    symlinkSync(target, keyPath)
+    await expect(ensureIdentity({ identityKeyPath: keyPath })).rejects.toThrow()
+    expect(readFileSync(target, 'utf8')).toBe('not a private key')
   })
 
   it('signCanonical/verifyCanonical round-trip, and rejects tampering', async () => {

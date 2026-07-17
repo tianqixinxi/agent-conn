@@ -3,9 +3,9 @@
  *
  * 安全要点(§2.5/§2.8):邀请链接的 e2eKey 只存在于 URL 的 `#` fragment 里,浏览器不会把
  * fragment 发给服务器——所以这个 handler **不读 token 是否有效**,也不做任何数据库查询:
- * 不论 token 有效/过期/不存在,响应体都完全一样(不泄露有效性)。完整的 "npx agent-comm
- * join <link>" 命令由页面内联 <script> 在浏览器端用 `location.href` 现拼,因为只有浏览器
- * 端能看到 fragment;这段 JS 不发起任何网络请求,自然也不会把 fragment 带出去。
+ * 不论 token 有效/过期/不存在,响应体都完全一样(不泄露有效性)。完整邀请链接只由页面
+ * 内联 <script> 在浏览器端从 `location.href` 读取,因为只有浏览器端能看到 fragment;
+ * 这段 JS 不发起任何网络请求,自然也不会把 fragment 带出去。
  */
 export function renderJoinPage(): string {
   return `<!doctype html>
@@ -53,29 +53,32 @@ export function renderJoinPage(): string {
 </head>
 <body>
   <h1>你被邀请加入一个 agent-comm 频道</h1>
-  <p>一键启动一个已连接 AgentComm Channel 的 Claude Code。Claude 会先让你确认新的信任关系。</p>
-  <button class="primary" id="open-agent-btn" type="button">启动 AgentComm + Claude Code</button>
-  <button id="open-claude-btn" type="button">仅用 Claude Code 打开</button>
-  <p>也可以在终端运行以下命令(命令已包含完整邀请链接,请不要转发给不信任的人):</p>
-  <pre><code id="join-cmd">正在生成命令…</code></pre>
-  <button id="copy-btn" type="button">复制命令</button>
+  <p>用已安装 AgentComm 插件的 Claude Code 打开邀请。Claude 会先让你确认一次新的信任关系。</p>
+  <button class="primary" id="open-claude-btn" type="button">用 Claude Code 打开</button>
+  <button id="open-agent-btn" type="button">用本机 AgentComm Launcher 打开</button>
+  <p>第一次使用?先在终端安装公开 marketplace 与插件:</p>
+  <pre><code>claude plugin marketplace add tianqixinxi/agent-conn
+claude plugin install agent-comm@agent-comm</code></pre>
+  <p>安装完成后,点击上面的 Claude Code 按钮;也可以复制完整邀请链接,粘贴给 Claude:</p>
+  <pre><code id="invite-link">正在读取邀请链接…</code></pre>
+  <button id="copy-btn" type="button">复制邀请链接</button>
   <p class="hint">
-    如果这台机器还没装 agent-comm,上面的 <code>npx</code> 命令会自动下载并运行,无需预先安装。
+    AgentComm Launcher 是可选的本机快捷方式;新用户只需要 Claude Code 与上面的插件。
+    私有频道链接中的密钥位于 <code>#</code> 后,请只分享给可信任的参与者。
   </p>
   <script>
     (function () {
       // 只在浏览器本地用 location.href 拼接命令,不发起任何网络请求——邀请链接里的
       // # fragment(e2eKey)因此不会被上传到任何地方。
       var link = window.location.href
-      var cmd = 'npx agent-comm join "' + link + '"'
       var prompt = [
         'Join this AgentComm invitation using the AgentComm integration:',
         link,
         '',
         'Ask me once to confirm the new trust relationship. After I confirm, connect the runtime and handle future channel messages automatically.'
       ].join('\\n')
-      var el = document.getElementById('join-cmd')
-      if (el) el.textContent = cmd
+      var el = document.getElementById('invite-link')
+      if (el) el.textContent = link
       var openAgentBtn = document.getElementById('open-agent-btn')
       if (openAgentBtn) {
         openAgentBtn.addEventListener('click', function () {
@@ -92,7 +95,7 @@ export function renderJoinPage(): string {
       if (btn) {
         btn.addEventListener('click', function () {
           if (window.navigator.clipboard && window.navigator.clipboard.writeText) {
-            window.navigator.clipboard.writeText(cmd)
+            window.navigator.clipboard.writeText(link)
           }
         })
       }

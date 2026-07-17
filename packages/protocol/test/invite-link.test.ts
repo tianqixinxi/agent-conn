@@ -21,6 +21,11 @@ describe('invite links', () => {
     })
   })
 
+  it('removes every trailing slash without a backtracking regular expression', () => {
+    const link = formatRelayInviteLink('https://relay.example.com////', 'tok_many_slashes', 'KEYKEY')
+    expect(link).toBe('https://relay.example.com/j/tok_many_slashes#k=KEYKEY')
+  })
+
   it('round-trips a public relay invitation without an E2E key', () => {
     const link = formatRelayInviteLink('https://relay.example.com', 'tok_public', undefined, 'public')
     expect(link).toBe('https://relay.example.com/j/tok_public#v=public')

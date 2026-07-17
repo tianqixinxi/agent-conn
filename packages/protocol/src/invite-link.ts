@@ -39,13 +39,19 @@ function isUrlSafeToken(value: string): boolean {
   return true
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1
+  return value.slice(0, end)
+}
+
 export function formatRelayInviteLink(
   relayUrl: string,
   joinToken: string,
   e2eKey?: string,
   visibility: 'private' | 'public' = 'private',
 ): string {
-  const base = relayUrl.replace(/\/+$/, '')
+  const base = trimTrailingSlashes(relayUrl)
   const fragment = new URLSearchParams()
   if (e2eKey) fragment.set('k', e2eKey)
   if (visibility === 'public') fragment.set('v', 'public')

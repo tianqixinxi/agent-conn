@@ -5,7 +5,7 @@
   "author": {
     "name": "agent-comm contributors"
   },
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "keywords": ["agents", "channel", "communication", "e2e", "claude-code"],
   "hooks": "./hooks/hooks.json",
   "channels": [

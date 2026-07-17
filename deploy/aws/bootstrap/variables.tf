@@ -31,9 +31,15 @@ variable "github_oidc_subject_prefix" {
 }
 
 variable "github_environment" {
-  description = "Protected GitHub Environment used by infrastructure and deployment jobs."
+  description = "Protected GitHub Environment used by infrastructure plan/apply jobs."
   type        = string
   default     = "production"
+}
+
+variable "github_deploy_environment" {
+  description = "Protected GitHub Environment used only by release deployment jobs."
+  type        = string
+  default     = "production-release"
 }
 
 variable "github_oidc_provider_arn" {

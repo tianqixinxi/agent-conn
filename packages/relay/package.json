@@ -2,6 +2,12 @@
   "name": "@agent-comm/relay",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tianqixinxi/agent-conn.git",
+    "directory": "packages/relay"
+  },
   "type": "module",
   "dependencies": {
     "@agent-comm/protocol": "workspace:*",

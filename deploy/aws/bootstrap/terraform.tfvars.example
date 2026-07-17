@@ -3,6 +3,7 @@ project_name      = "agent-comm"
 environment       = "production"
 github_repository = "your-org/agent-comm"
 github_environment = "production"
+github_deploy_environment = "production-release"
 
 # Repositories using GitHub immutable OIDC subjects must include the owner and
 # repository IDs returned by the repository OIDC customization endpoint.

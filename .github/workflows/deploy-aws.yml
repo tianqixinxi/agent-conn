@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: agent-comm-production-release
@@ -27,12 +26,15 @@ jobs:
     name: Verify release
     if: github.event_name == 'push' || inputs.action == 'deploy'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.33.0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.13.0
           cache: pnpm
@@ -41,27 +43,57 @@ jobs:
       - run: pnpm test
       - run: pnpm lint
 
+  build:
+    name: Build release image without production credentials
+    needs: [verify]
+    if: needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - run: docker build --file Dockerfile.relay --tag "agent-comm-relay:${GITHUB_SHA}" .
+      - run: docker save "agent-comm-relay:${GITHUB_SHA}" | gzip --best > relay-image.tar.gz
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: agent-comm-relay-image
+          path: relay-image.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+
   release:
     name: Release
-    needs: [verify]
-    if: always() && (inputs.action == 'rollback' || needs.verify.result == 'success')
+    needs: [verify, build]
+    if: always() && (inputs.action == 'rollback' || (needs.verify.result == 'success' && needs.build.result == 'success'))
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
-      name: production
+      name: production-release
       url: https://${{ vars.AGENT_COMM_DOMAIN }}
+    permissions:
+      contents: read
+      id-token: write
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       PROJECT: ${{ vars.AGENT_COMM_PROJECT }}
       ENVIRONMENT: ${{ vars.AGENT_COMM_ENVIRONMENT }}
       DOMAIN: ${{ vars.AGENT_COMM_DOMAIN }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: aws-actions/configure-aws-credentials@v6
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        if: github.event_name == 'push' || inputs.action == 'deploy'
+        with:
+          name: agent-comm-relay-image
+          path: release
+      - name: Load verified release image
+        if: github.event_name == 'push' || inputs.action == 'deploy'
+        run: gunzip --stdout release/relay-image.tar.gz | docker load
+      - uses: aws-actions/configure-aws-credentials@f79bc868ee9ca4687c7db10f05fe6a46cdcda892 # v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: agent-comm-release
-      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
         if: github.event_name == 'push' || inputs.action == 'deploy'
 
       - name: Resolve deployment target
@@ -83,7 +115,7 @@ jobs:
           echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push immutable image
+      - name: Push immutable image
         id: image
         if: github.event_name == 'push' || inputs.action == 'deploy'
         env:
@@ -97,7 +129,7 @@ jobs:
           if ! aws ecr describe-images \
             --repository-name "$REPOSITORY" \
             --image-ids "imageTag=${GITHUB_SHA}" >/dev/null 2>&1; then
-            docker build --file Dockerfile.relay --tag "$IMAGE" .
+            docker tag "agent-comm-relay:${GITHUB_SHA}" "$IMAGE"
             docker push "$IMAGE"
           fi
           echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"

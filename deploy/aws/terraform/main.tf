@@ -13,6 +13,13 @@ locals {
   enable_route53    = var.route53_zone_id != ""
   enable_cloudflare = var.cloudflare_zone_id != ""
   a2a_ingress_value = var.enable_a2a_ingress ? "1" : "0"
+  public_origin_cidrs = local.enable_cloudflare && var.cloudflare_proxied ? var.cloudflare_ipv4_cidrs : [
+    "0.0.0.0/0"
+  ]
+}
+
+data "aws_iam_policy" "runtime_boundary" {
+  name = "${local.name}-relay-boundary"
 }
 
 check "single_dns_provider" {
@@ -70,7 +77,7 @@ resource "aws_security_group" "relay" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = local.public_origin_cidrs
   }
 
   ingress {
@@ -78,7 +85,7 @@ resource "aws_security_group" "relay" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = local.public_origin_cidrs
   }
 
   egress {
@@ -169,7 +176,8 @@ resource "aws_cloudwatch_log_group" "relay" {
 }
 
 resource "aws_iam_role" "instance" {
-  name = "${local.name}-relay-instance"
+  name                 = "${local.name}-relay-instance"
+  permissions_boundary = data.aws_iam_policy.runtime_boundary.arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -178,6 +186,10 @@ resource "aws_iam_role" "instance" {
       Action    = "sts:AssumeRole"
     }]
   })
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "ssm" {
@@ -264,8 +276,9 @@ resource "aws_instance" "relay" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
   lifecycle {

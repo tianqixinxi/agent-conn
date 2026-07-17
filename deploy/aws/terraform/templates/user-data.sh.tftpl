@@ -16,6 +16,9 @@ docker network inspect agentcomm >/dev/null 2>&1 || docker network create agentc
 cat >/opt/agent-comm/caddy/Caddyfile <<'CADDYFILE'
 ${domain_name} {
   encode zstd gzip
+  # Invitation path tokens are bearer capabilities. The E2E #k fragment never
+  # reaches the server, and the path token must not be retained in access logs.
+  log_skip /j/*
   reverse_proxy agentcomm-relay:8787
 
   header {

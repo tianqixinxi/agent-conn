@@ -12,7 +12,9 @@ Claude Code / browser
         |
    HTTPS :443
         |
- Elastic IP + Caddy
+ Cloudflare edge
+        |
+ Elastic IP + Caddy (Cloudflare source ranges only)
         |
  AgentComm relay container
         |
@@ -27,8 +29,10 @@ CloudWatch Logs <---- Caddy and relay stdout/stderr
 ```
 
 Default server size is one `t3.small` Amazon Linux 2023 instance with a 40 GiB encrypted gp3 root
-volume. Ports 80 and 443 are public. Port 22 and relay port 8787 are not public. Caddy obtains and renews
-the public certificate. Administration and deployment use AWS Systems Manager.
+volume. When Cloudflare proxying is enabled, ports 80 and 443 accept only Cloudflare's published IPv4
+origin ranges; otherwise they are public. Port 22 and relay port 8787 are never public. Caddy obtains
+and renews the public certificate. Administration and deployment use AWS Systems Manager. Invitation
+paths are excluded from Caddy access logs so bearer join tokens do not enter CloudWatch.
 
 This is the safe production baseline for the code that exists today, not the final multi-region
 architecture. The scale-out target is stateless relay replicas plus PostgreSQL/outbox in a regional
@@ -37,15 +41,19 @@ Channel Cell. The public API and client protocol stay stable when that storage m
 ## Pipeline
 
 - `.github/workflows/ci.yml`: typecheck, tests, lint, container smoke test, and Terraform validation.
-- `.github/workflows/infra-aws.yml`: manual Terraform plan/apply behind the `production` GitHub
-  Environment.
-- `.github/workflows/deploy-aws.yml`: release on `v*` tags or manual dispatch. It builds an immutable
-  ECR image, deploys through SSM, waits for the internal health check, and verifies public HTTPS.
+- `.github/workflows/infra-aws.yml`: separate manual Terraform plan and apply runs behind the
+  `production` GitHub Environment. Apply accepts only an exact plan from the same commit and successful
+  plan run; binary plans remain encrypted in the private Terraform state bucket and expire after two days.
+- `.github/workflows/deploy-aws.yml`: release on protected `v*` tags or manual dispatch. An unprivileged
+  job builds and tests the image without production credentials; the `production-release` job receives
+  the artifact, pushes an immutable ECR image, deploys through SSM, and verifies public HTTPS.
 - A failed health check automatically restores the previous container image.
 - The manual `rollback` action deploys the previously successful image.
 
-The AWS roles trust only the configured GitHub repository and protected GitHub Environment. GitHub
-uses OIDC short-lived credentials; do not create long-lived AWS access keys for the workflows.
+The infrastructure and deployment AWS roles trust separate protected GitHub Environments. The relay
+instance role has an IAM permissions boundary, so Terraform cannot expand it beyond the documented
+ECR, SSM, CloudWatch, and backup access. GitHub uses OIDC short-lived credentials; do not create
+long-lived AWS access keys for the workflows.
 
 ## Information required from the owner
 
@@ -56,7 +64,8 @@ You need to choose or provide:
    the workflows can run.
 3. A hostname such as `connect.meee1.com`.
 4. Route53 hosted-zone ID, or a zone-scoped Cloudflare API token and Cloudflare zone ID.
-5. The people allowed to approve the protected GitHub `production` Environment.
+5. The people allowed to approve the protected GitHub `production` and `production-release`
+   Environments.
 
 No AgentComm application secret is needed by the current relay. Agent runtimes authenticate requests
 with their own Ed25519 node identities. Keep `ENABLE_A2A_INGRESS=false` unless the deployment is
@@ -95,22 +104,24 @@ bootstrap tfvars. The bootstrap creates:
 - versioned and encrypted Terraform state bucket;
 - GitHub OIDC infrastructure role;
 - GitHub OIDC deployment role.
+- permissions boundary for the relay EC2 runtime role.
 
 The bootstrap state remains local. Store it in an encrypted administrative backup; it does not contain
 application credentials, but it controls the bootstrap resources.
 
 ## GitHub Environment variables
 
-Create a protected Environment named `production` and add required reviewers. Add these Environment
-variables using the bootstrap outputs and the chosen deployment values:
+Create protected Environments named `production` and `production-release`. Require a trusted reviewer,
+disable administrator bypass, and restrict `production` to `main`; restrict `production-release` to
+`main` and protected `v*` tags. Add the following variables to both Environments unless noted:
 
 | Variable | Example/source |
 |---|---|
 | `AWS_REGION` | `us-west-2` |
-| `AWS_INFRA_ROLE_ARN` | bootstrap output `github_infra_role_arn` |
-| `AWS_DEPLOY_ROLE_ARN` | bootstrap output `github_deploy_role_arn` |
-| `TF_STATE_BUCKET` | bootstrap output `terraform_state_bucket` |
-| `TF_STATE_KEY` | bootstrap output `terraform_state_key` |
+| `AWS_INFRA_ROLE_ARN` | bootstrap output `github_infra_role_arn`; `production` only |
+| `AWS_DEPLOY_ROLE_ARN` | bootstrap output `github_deploy_role_arn`; `production-release` only |
+| `TF_STATE_BUCKET` | bootstrap output `terraform_state_bucket`; `production` only |
+| `TF_STATE_KEY` | bootstrap output `terraform_state_key`; `production` only |
 | `AGENT_COMM_PROJECT` | `agent-comm` |
 | `AGENT_COMM_ENVIRONMENT` | `production` |
 | `AGENT_COMM_DOMAIN` | `connect.meee1.com` |
@@ -119,15 +130,16 @@ variables using the bootstrap outputs and the chosen deployment values:
 | `CLOUDFLARE_PROXIED` | `true` |
 | `ENABLE_A2A_INGRESS` | `false` |
 
-Add `CLOUDFLARE_API_TOKEN` as an Environment **secret**, not a variable. Scope it to the `meee1.com`
-zone with `DNS Write` and `Zone Read` only; do not use a Global API Key. All other values above are
-identifiers and configuration, not secret access keys. The workflows request temporary AWS credentials
-through OIDC at run time.
+Add `CLOUDFLARE_API_TOKEN` only to `production` as an Environment **secret**, not a variable. Scope it
+to the intended zone with `DNS Write` and `Zone Read` only; do not use a Global API Key. All other
+values above are identifiers and configuration, not secret access keys. The workflows request temporary
+AWS credentials through OIDC at run time.
 
 ## First deployment
 
-1. Run `AWS infrastructure` with `action=plan` and review the plan.
-2. Run it again with `action=apply` after production approval.
+1. Run `AWS infrastructure` with `action=plan`, approve the protected job, and review its summary.
+2. Run it again from the same commit with `action=apply` and `plan_run_id` set to the successful plan
+   run ID. Approve the apply deployment after confirming the plan provenance and summarized change counts.
 3. Terraform creates the Route53 or Cloudflare `A` record when the corresponding zone ID is configured.
 4. Wait for DNS to resolve; for Cloudflare the public answer will be a Cloudflare edge address when
    proxying is enabled.

@@ -1,0 +1,36 @@
+name: Bug report
+description: Report reproducible incorrect behavior (not a security vulnerability)
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: For security issues, use the private vulnerability reporting flow described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include expected behavior, actual behavior, and a minimal reproduction using synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js, pnpm, runtime, and transport versions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Data hygiene
+      options:
+        - label: I removed live invitation links, keys, tokens, credentials, and production data.
+          required: true

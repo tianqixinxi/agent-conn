@@ -18,6 +18,14 @@ output "github_oidc_provider_arn" {
   value = local.github_oidc_provider_arn
 }
 
-output "github_oidc_subject" {
-  value = local.github_sub
+output "github_infra_oidc_subject" {
+  value = local.github_infra_sub
+}
+
+output "github_deploy_oidc_subject" {
+  value = local.github_deploy_sub
+}
+
+output "runtime_permissions_boundary_arn" {
+  value = aws_iam_policy.runtime_boundary.arn
 }

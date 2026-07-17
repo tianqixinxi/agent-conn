@@ -1,0 +1,10 @@
+* @hawkelethan9
+
+/.github/ @hawkelethan9
+/deploy/ @hawkelethan9
+/Dockerfile.relay @hawkelethan9
+/SECURITY.md @hawkelethan9
+/packages/protocol/ @hawkelethan9
+/packages/agent-comm/src/crypto/ @hawkelethan9
+/packages/agent-comm/src/launcher/ @hawkelethan9
+/packages/relay/src/auth.ts @hawkelethan9

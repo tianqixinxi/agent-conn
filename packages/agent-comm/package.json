@@ -2,6 +2,12 @@
   "name": "agent-comm",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tianqixinxi/agent-conn.git",
+    "directory": "packages/agent-comm"
+  },
   "type": "module",
   "bin": {
     "agent-comm": "./src/main.ts"

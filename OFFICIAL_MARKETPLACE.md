@@ -10,7 +10,7 @@ This repository is already a directly installable Claude Code marketplace. Listi
 - Repository: <https://github.com/tianqixinxi/agent-conn>
 - Marketplace manifest: `.claude-plugin/marketplace.json`
 - Plugin source: `plugin/`
-- Current release: `v0.3.1`
+- Current release: `v0.3.2`
 - License: Apache-2.0
 
 Suggested description:

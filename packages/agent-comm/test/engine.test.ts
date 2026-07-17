@@ -384,7 +384,14 @@ describe('engine (F1-F5 over a shared local hub)', () => {
 
       await expect(alice.publishCard({ name: 'alice' }, 'agent:alice')).resolves.toBeUndefined()
       expect(healthyCardUpdates).toBe(1)
+      healthyCardUpdates = 0
+      await expect(alice.publishCard({ name: 'alice' }, 'agent:alice', 'healthy')).resolves.toBeUndefined()
+      expect(healthyCardUpdates).toBe(1)
+      await expect(alice.publishCard({ name: 'alice' }, 'agent:alice', 'stale')).rejects.toSatisfy(
+        (e: unknown) => isAgentCommError(e, 'HOME_UNREACHABLE'),
+      )
       await expect(alice.readInbox({})).resolves.toEqual([])
+      await expect(alice.readInbox({ filter: { channel: 'healthy' } })).resolves.toEqual([])
       await expect(alice.listHeld()).resolves.toEqual([])
 
       await expect(alice.syncOnce('stale')).rejects.toSatisfy((e: unknown) =>

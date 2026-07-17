@@ -187,17 +187,24 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     })
   }
 
-  /** 在本 profile 已知的各频道的家里找一条当前处于 held 状态的消息(T3 只给 messageId,不给 channel) */
+  /** Legacy 调用可扫描 profile；runtime adapter 必须传 active channel，避免触碰 dormant membership。 */
   async function findHeldMessage(
     messageId: string,
+    channelFilter?: string,
   ): Promise<{ channel: string; home: string; message: Message } | undefined> {
-    for (const ch of store.channels.list()) {
+    const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
+    for (const ch of channels) {
       const driver = await getChannelDriver(ch)
       let held: Message[]
       try {
         held = await driver.listHeld(ch.name)
       } catch (err) {
-        if (isAgentCommError(err, 'NOT_IMPLEMENTED') || isAgentCommError(err, 'HOME_UNREACHABLE')) continue
+        if (
+          isAgentCommError(err, 'NOT_IMPLEMENTED') ||
+          (channelFilter === undefined && isAgentCommError(err, 'HOME_UNREACHABLE'))
+        ) {
+          continue
+        }
         throw err
       }
       const match = held.find((m) => m.messageId === messageId)
@@ -420,8 +427,9 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       }))
     },
 
-    async publishCard(card: AgentCard, _actor) {
-      for (const ch of store.channels.list()) {
+    async publishCard(card: AgentCard, _actor, channelFilter) {
+      const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
+      for (const ch of channels) {
         try {
           const driver = await getChannelDriver(ch)
           await driver.updateCard({ channel: ch.name, alias: ch.myAlias, nodeId: identity.nodeId, card })
@@ -433,8 +441,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
             updatedAt: nowIso(),
           })
         } catch (err) {
-          // AgentCard 是跨 membership 的 best-effort presence 更新；一个退役 relay 不应阻断健康频道。
-          if (isAgentCommError(err, 'HOME_UNREACHABLE')) continue
+          // Legacy 全量发布保持 best-effort；显式频道发布必须把失败返回给调用方。
+          if (channelFilter === undefined && isAgentCommError(err, 'HOME_UNREACHABLE')) continue
           throw err
         }
       }
@@ -627,7 +635,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     },
 
     async readInbox(input) {
-      await engine.syncOnce()
+      await engine.syncOnce(input?.filter?.channel)
       const rows = store.inbox.listJoined({
         channel: input?.filter?.channel,
         traceId: input?.filter?.traceId,
@@ -747,7 +755,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async deliverHeld(input, actor) {
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'deliverHeld 仅限 human(I4)')
-      const found = await findHeldMessage(input.messageId)
+      const found = await findHeldMessage(input.messageId, input.channel)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
       const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({
@@ -769,7 +777,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async dropHeld(input, actor) {
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'dropHeld 仅限 human(I4)')
-      const found = await findHeldMessage(input.messageId)
+      const found = await findHeldMessage(input.messageId, input.channel)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
       const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({
@@ -791,7 +799,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async editHeld(input, actor) {
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'editHeld 仅限 human(I4)')
-      const found = await findHeldMessage(input.messageId)
+      const found = await findHeldMessage(input.messageId, input.channel)
       if (!found) throw new AgentCommError('NOT_HELD', `message not held: ${input.messageId}`)
       const driver = await getTransportBinding(found.home)
       await driver.resolveHeld({

@@ -61,6 +61,14 @@ async function connectBridge(engine: FakeEngine, notifications: ChannelNotificat
   return { bridge, client, notifications }
 }
 
+async function activate(client: Client, channel = 'duet'): Promise<void> {
+  const result = await client.callTool({
+    name: 'agent_comm',
+    arguments: { operation: 'activate', channel },
+  })
+  if (result.isError) throw new Error(`failed to activate ${channel}: ${firstText(result)}`)
+}
+
 const channelNotificationSchema = NotificationSchema.extend({
   method: z.literal('notifications/claude/channel'),
   params: z.object({
@@ -92,9 +100,93 @@ describe('Claude Code channel bridge', () => {
     expect(tools.map((tool) => tool.name)).toEqual(['agent_comm'])
   })
 
+  it('keeps durable memberships dormant until this runtime explicitly activates one channel', async () => {
+    const engine = new FakeEngine({
+      profileName: 'bob',
+      memberships: [
+        { channel: 'old', alias: 'bob', home: 'http://127.0.0.1:8787' },
+        { channel: 'duet', alias: 'bob', home: 'https://relay.example' },
+      ],
+      inbox: [
+        message({ messageId: 'm-old', channel: 'old' }),
+        message({ messageId: 'm-duet', channel: 'duet' }),
+      ],
+      held: [
+        makeHeldMessage({ messageId: 'h-old', channel: 'old' }),
+        makeHeldMessage({ messageId: 'h-duet', channel: 'duet' }),
+      ],
+    })
+    const { bridge, client, notifications } = await connectBridge(engine)
+
+    await bridge.pollOnce()
+    expect(notifications).toEqual([])
+    expect(engine.calls.some((call) => call.method === 'readInbox')).toBe(false)
+    expect(engine.calls.some((call) => call.method === 'listHeld')).toBe(false)
+
+    await activate(client, 'duet')
+    const published = engine.calls.find((call) => call.method === 'publishCard')
+    expect(published?.args[1]).toBe('duet')
+    expect(
+      (published?.args[0] as { supportedInterfaces?: unknown[] } | undefined)?.supportedInterfaces,
+    ).toHaveLength(1)
+
+    engine.calls.length = 0
+    await bridge.pollOnce()
+    expect(notifications.map((item) => item.meta.channel)).toEqual(['duet', 'duet'])
+    expect(engine.calls.find((call) => call.method === 'readInbox')?.args[0]).toMatchObject({
+      filter: { channel: 'duet' },
+    })
+    expect(engine.calls.find((call) => call.method === 'listHeld')?.args[0]).toBe('duet')
+
+    const afterRestart: ChannelNotification[] = []
+    const restartedBridge = createChannelBridge(engine, {
+      notify: async (notification) => void afterRestart.push(notification),
+      stderr: () => {},
+    })
+    engine.calls.length = 0
+    await restartedBridge.pollOnce()
+    expect(afterRestart).toEqual([])
+    expect(engine.calls.some((call) => call.method === 'readInbox')).toBe(false)
+    expect(engine.calls.some((call) => call.method === 'listHeld')).toBe(false)
+  })
+
+  it('delegates only through a channel activated by the current runtime', async () => {
+    const engine = new FakeEngine({
+      memberships: [
+        { channel: 'old', alias: 'bob', home: 'local:/old.db' },
+        { channel: 'duet', alias: 'bob', home: 'local:/duet.db' },
+      ],
+    })
+    const { client } = await connectBridge(engine)
+    await activate(client, 'duet')
+
+    const inactive = await client.callTool({
+      name: 'agent_comm',
+      arguments: { operation: 'delegate', channel: 'old', to: 'alice', intent: 'do work' },
+    })
+    expect(inactive.isError).toBe(true)
+    expect(JSON.parse(firstText(inactive))).toMatchObject({ code: 'INVALID_INPUT' })
+    expect(engine.calls.some((call) => call.method === 'send')).toBe(false)
+
+    const active = await client.callTool({
+      name: 'agent_comm',
+      arguments: { operation: 'delegate', to: 'alice', intent: 'do work' },
+    })
+    expect(active.isError).toBeFalsy()
+    expect(engine.calls.find((call) => call.method === 'send')?.args[0]).toMatchObject({
+      channel: 'duet',
+    })
+  })
+
   it('advertises the Channel capability and emits the real MCP notification method', async () => {
     const inbound = message()
-    const bridge = createChannelBridge(new FakeEngine({ inbox: [inbound] }), { stderr: () => {} })
+    const bridge = createChannelBridge(
+      new FakeEngine({
+        inbox: [inbound],
+        memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+      }),
+      { stderr: () => {} },
+    )
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'channel-host-test', version: '0.0.0' }, { capabilities: {} })
     const notifications: ChannelNotification[] = []
@@ -103,6 +195,7 @@ describe('Claude Code channel bridge', () => {
     })
 
     await Promise.all([bridge.server.connect(serverTransport), client.connect(clientTransport)])
+    await activate(client)
     await bridge.pollOnce()
     await new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -116,9 +209,13 @@ describe('Claude Code channel bridge', () => {
 
   it('pushes an inbound message but keeps it unconsumed until Claude reports completion', async () => {
     const inbound = message()
-    const engine = new FakeEngine({ inbox: [inbound] })
-    const { bridge, notifications } = await connectBridge(engine)
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    const { bridge, client, notifications } = await connectBridge(engine)
 
+    await activate(client)
     await bridge.pollOnce()
 
     expect(notifications).toHaveLength(1)
@@ -131,12 +228,16 @@ describe('Claude Code channel bridge', () => {
     expect(engine.calls.find((call) => call.method === 'readInbox')?.args[0]).toEqual({
       consume: false,
       limit: 1000,
+      filter: { channel: 'duet' },
     })
     expect(engine.calls.some((call) => call.method === 'ack')).toBe(false)
   })
 
   it('leaves an inbound message unconsumed when delivery into Claude Code fails', async () => {
-    const engine = new FakeEngine({ inbox: [message()] })
+    const engine = new FakeEngine({
+      inbox: [message()],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
     const stderr: string[] = []
     const bridge = createChannelBridge(engine, {
       notify: async () => {
@@ -144,7 +245,11 @@ describe('Claude Code channel bridge', () => {
       },
       stderr: (chunk) => void stderr.push(chunk),
     })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'channel-test', version: '0.0.0' }, { capabilities: {} })
+    await Promise.all([bridge.server.connect(serverTransport), client.connect(clientTransport)])
 
+    await activate(client)
     await bridge.pollOnce()
 
     expect(engine.calls.some((call) => call.method === 'ack')).toBe(false)
@@ -158,6 +263,7 @@ describe('Claude Code channel bridge', () => {
       memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
     })
     const { bridge, client } = await connectBridge(engine)
+    await activate(client)
     await bridge.pollOnce()
 
     const result = await client.callTool({
@@ -193,8 +299,12 @@ describe('Claude Code channel bridge', () => {
 
   it('ACKs a no-reply event only after the complete operation', async () => {
     const inbound = message()
-    const engine = new FakeEngine({ inbox: [inbound] })
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
     const { bridge, client } = await connectBridge(engine)
+    await activate(client)
     await bridge.pollOnce()
 
     const result = await client.callTool({
@@ -243,6 +353,27 @@ describe('Claude Code channel bridge', () => {
       channel: 'duet',
       maxUses: 1,
     })
+    expect(engine.calls.find((call) => call.method === 'publishCard')?.args[1]).toBe('duet')
+  })
+
+  it('activates only the channel returned by a successful invitation connect', async () => {
+    const inbound = message({ messageId: 'm-connected', channel: 'fake-channel' })
+    const engine = new FakeEngine({ profileName: 'bob', inbox: [inbound] })
+    const { bridge, client, notifications } = await connectBridge(engine)
+
+    const result = await client.callTool({
+      name: 'agent_comm',
+      arguments: { operation: 'connect', link: 'https://relay.example/j/token', alias: 'bob' },
+    })
+    expect(result.isError).toBeFalsy()
+    expect(engine.calls.find((call) => call.method === 'publishCard')?.args[1]).toBe('fake-channel')
+
+    await bridge.pollOnce()
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]?.meta).toMatchObject({
+      event_id: 'm-connected',
+      channel: 'fake-channel',
+    })
   })
 
   it('re-homes a stale localhost channel before creating its invite', async () => {
@@ -287,9 +418,13 @@ describe('Claude Code channel bridge', () => {
 
   it('notifies only for held approvals and applies an explicit decision with the human actor', async () => {
     const held = makeHeldMessage({ messageId: 'm-held-1', channel: 'duet', from: 'alice', to: 'bob' })
-    const engine = new FakeEngine({ held: [held] })
+    const engine = new FakeEngine({
+      held: [held],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
     const { bridge, client, notifications } = await connectBridge(engine)
 
+    await activate(client)
     await bridge.pollOnce()
     await bridge.pollOnce()
     expect(notifications).toHaveLength(1)
@@ -302,7 +437,7 @@ describe('Claude Code channel bridge', () => {
     expect(result.isError).toBeFalsy()
     const deliver = engine.calls.find((call) => call.method === 'deliverHeld')
     expect(deliver?.actor).toBe('human')
-    expect(deliver?.args[0]).toEqual({ messageId: held.message.messageId })
+    expect(deliver?.args[0]).toEqual({ messageId: held.message.messageId, channel: 'duet' })
   })
 
   it('classifies A2A interrupted task updates so only authorization requires user governance', async () => {
@@ -317,6 +452,7 @@ describe('Claude Code channel bridge', () => {
       state: A2ATaskState.TASK_STATE_AUTH_REQUIRED,
     })
     const engine = new FakeEngine({
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
       inbox: [
         message({
           messageId: 'm-input',
@@ -330,8 +466,9 @@ describe('Claude Code channel bridge', () => {
         }),
       ],
     })
-    const { bridge, notifications } = await connectBridge(engine)
+    const { bridge, client, notifications } = await connectBridge(engine)
 
+    await activate(client)
     await bridge.pollOnce()
 
     expect(notifications.map((item) => item.meta.event_type)).toEqual([

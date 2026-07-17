@@ -63,7 +63,7 @@ export interface A2AChannelAdapter {
     approval: unknown,
     actor: Actor,
   ): Promise<{ taskId: string; update: SendResult }>
-  readInbox(limit: number): Promise<A2AInboundEvent[]>
+  readInbox(limit: number, channel?: string): Promise<A2AInboundEvent[]>
 }
 
 function derivedTaskId(messageId: string): string {
@@ -267,8 +267,12 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
       return result
     },
 
-    async readInbox(limit) {
-      const messages = await engine.readInbox({ consume: false, limit })
+    async readInbox(limit, channel) {
+      const messages = await engine.readInbox({
+        consume: false,
+        limit,
+        ...(channel === undefined ? {} : { filter: { channel } }),
+      })
       return messages.map((transport) => ({
         transport,
         event: tryDecodeA2AEvent(transport.payload),

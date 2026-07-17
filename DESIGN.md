@@ -98,8 +98,10 @@ AgentComm 保留 A2A 本身不负责的能力：
 - 一个频道只有一个排序权威 home，成员端不生成 `seq`。
 - ACK 只能在 runtime 明确 reply/complete/suspend 后发生；进程崩溃会重新投递。
 - 连接邀请需要一次明确的信任确认；连接后的安全工作自动处理。
+- profile membership 是持久身份历史，不等于 runtime 订阅；每个新 runtime 的 active channel 集合为空。
+- 只有当前 runtime 明确 `share / connect / activate` 的频道可以同步 inbox、列出审批、发布 AgentCard 或委派任务。
 - 频道 visibility 只能在创建时决定，不提供 private→public 原地切换。
-- alive 是可续租的 presence，不是成员资格：运行中的 runtime 每次签名拉取、ACK、发送或成员查询都会刷新 relay 的 `last_seen_at`；45 秒没有签名活动即显示 offline，但不会踢出频道、删除身份或丢弃积压消息。Channel 默认每秒同步，因此正常运行时会持续续租。单节点生产把租约放在 SQLite；多副本阶段迁到 Redis，并保持同一 45 秒语义。
+- alive 是可续租的 presence，不是成员资格：运行中的 runtime 每次签名拉取、ACK、发送或成员查询都会刷新 relay 的 `last_seen_at`；45 秒没有签名活动即显示 offline，但不会踢出频道、删除身份或丢弃积压消息。Channel 只对本会话 active channel 每秒同步，因此 dormant membership 不会续租。单节点生产把租约放在 SQLite；多副本阶段迁到 Redis，并保持同一 45 秒语义。
 - transport-held 的放行/拒绝与 A2A `AUTH_REQUIRED` 都会通知用户，但前者是频道治理，后者是任务生命周期，二者不可混为一个 API。
 
 ## 5. TransportBinding
@@ -140,6 +142,7 @@ Claude Channel 只注册一个 `agent_comm` tool：
 |---|---|
 | `share` | 创建/复用频道、发布 A2A AgentCard、返回一次性邀请 |
 | `connect` | 用户确认后兑换邀请并发布 runtime card |
+| `activate` | 在当前 runtime 显式恢复一个已有 membership；进程重启后需重新激活 |
 | `delegate` | 创建 A2A task/message 并委派结果 |
 | `reply` | 回复消息，或继续 INPUT_REQUIRED/AUTH_REQUIRED task |
 | `complete` | 无回复地完成并消费事件 |
@@ -152,6 +155,14 @@ Channel notification 分类：
 - `message / task_message / task_update / task_artifact`：自动处理。
 - `task_input_required`：优先由 runtime 从上下文补齐；确实缺信息时再问用户。
 - `task_authorization_required / approval_required`：必须通知用户。
+
+Runtime adapter 维护一个仅存在于当前进程内的 `activeChannels` 集合，初始为空：
+
+- `share` 激活被创建或复用的频道，`connect` 激活邀请兑换得到的频道，`activate` 激活已有 membership。
+- inbox、held approval 和 AgentCard 发布必须逐个传入 active channel，不允许用 profile 的全量 memberships 作为隐式默认值。
+- `delegate` 只能发往 active channel；只有一个 active channel 时可省略名称，多个时必须明确指定。
+- runtime 退出即丢弃 active 集合，不修改 membership、cursor、积压消息或密钥。重新启动不会联系任何历史 home，直到用户明确恢复频道。
+- 多个 active channel 的轮询逐频道隔离故障；某一 home 暂时不可达不会阻断其他 active channel。
 
 浏览器邀请页不能读取或上传 `#k`；页面只在本地把完整链接交给 `agentcomm://` launcher。当前 launcher 用 `--plugin-dir` 加载开发目录，所以 development channel 条目必须引用项目 MCP server：`server:agent-comm`，并显式把 plugin root 注入 `CLAUDE_PLUGIN_ROOT` 供根目录 `.mcp.json` 展开；只有从 marketplace 正式安装插件后才使用 `plugin:agent-comm@<marketplace>`。邀请 prompt 必须放在 variadic development-channel 参数之前，避免被误解析成第二个 channel entry。插件的 `PreToolUse` hook 对 `agent_comm(operation=connect)` 强制返回 `ask`，因此兑换邀请前有一次由宿主执行的 yes/no 信任确认，而不是依赖提示词约定。research preview 的 development channel 代码信任确认是额外的宿主边界；正式 allowlist 分发后不再需要 development 标签。
 

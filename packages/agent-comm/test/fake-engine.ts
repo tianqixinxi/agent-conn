@@ -109,6 +109,7 @@ export class FakeEngine implements Engine {
       ...(input.description === undefined ? {} : { description: input.description }),
     }
     this.channels.push(channel)
+    this.memberships = this.memberships.filter((membership) => membership.channel !== input.name)
     this.memberships.push({ channel: input.name, alias: input.alias, home: channel.home })
     return channel
   }
@@ -136,8 +137,8 @@ export class FakeEngine implements Engine {
     return input?.channel ? this.peers.filter((p) => p.channel === input.channel) : this.peers
   }
 
-  async publishCard(card: AgentCard, actor: Actor): Promise<void> {
-    this.record('publishCard', [card], actor)
+  async publishCard(card: AgentCard, actor: Actor, channel?: string): Promise<void> {
+    this.record('publishCard', [card, channel], actor)
   }
 
   async createInvite(
@@ -165,7 +166,9 @@ export class FakeEngine implements Engine {
 
   async readInbox(input?: ReadInboxInput): Promise<Message[]> {
     this.record('readInbox', [input])
-    return this.inbox
+    return input?.filter?.channel
+      ? this.inbox.filter((message) => message.channel === input.filter?.channel)
+      : this.inbox
   }
 
   async ack(input: { messageId: string }): Promise<void> {
@@ -182,25 +185,40 @@ export class FakeEngine implements Engine {
     return channel ? this.held.filter((h) => h.channel === channel) : this.held
   }
 
-  async deliverHeld(input: { messageId: string }, actor: Actor): Promise<void> {
+  async deliverHeld(input: { messageId: string; channel?: string | undefined }, actor: Actor): Promise<void> {
     this.record('deliverHeld', [input], actor)
     this.requireHuman(actor, 'deliverHeld')
-    this.held = this.held.filter((h) => h.message.messageId !== input.messageId)
+    this.held = this.held.filter(
+      (h) =>
+        h.message.messageId !== input.messageId ||
+        (input.channel !== undefined && h.channel !== input.channel),
+    )
   }
 
-  async dropHeld(input: { messageId: string }, actor: Actor): Promise<void> {
+  async dropHeld(input: { messageId: string; channel?: string | undefined }, actor: Actor): Promise<void> {
     this.record('dropHeld', [input], actor)
     this.requireHuman(actor, 'dropHeld')
-    this.held = this.held.filter((h) => h.message.messageId !== input.messageId)
+    this.held = this.held.filter(
+      (h) =>
+        h.message.messageId !== input.messageId ||
+        (input.channel !== undefined && h.channel !== input.channel),
+    )
   }
 
   async editHeld(
-    input: { messageId: string; payload?: unknown; contentType?: string | undefined },
+    input: {
+      messageId: string
+      channel?: string | undefined
+      payload?: unknown
+      contentType?: string | undefined
+    },
     actor: Actor,
   ): Promise<void> {
     this.record('editHeld', [input], actor)
     this.requireHuman(actor, 'editHeld')
-    const entry = this.held.find((h) => h.message.messageId === input.messageId)
+    const entry = this.held.find(
+      (h) => h.message.messageId === input.messageId && (!input.channel || h.channel === input.channel),
+    )
     if (entry && input.payload !== undefined) entry.message.payload = input.payload
     if (entry && input.contentType !== undefined) entry.message.contentType = input.contentType
   }

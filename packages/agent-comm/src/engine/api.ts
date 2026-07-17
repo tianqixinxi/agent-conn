@@ -122,7 +122,8 @@ export interface Engine {
   leaveChannel(input: { channel: string }, actor: Actor): Promise<void>
   listChannels(): Promise<Channel[]>
   listPeers(input?: { channel?: string | undefined }): Promise<Peer[]>
-  publishCard(card: AgentCard, actor: Actor): Promise<void>
+  /** channel 缺省时保留 legacy 的全 membership 发布；Channel runtime 必须传当前会话已激活频道。 */
+  publishCard(card: AgentCard, actor: Actor, channel?: string): Promise<void>
 
   // —— 邀请(T2)——
   createInvite(
@@ -145,11 +146,16 @@ export interface Engine {
 
   // —— T3 治理(人类专属,I4:actor 必须为 'human',否则抛 SCOPE_DENIED)——
   listHeld(channel?: string): Promise<HeldMessage[]>
-  deliverHeld(input: { messageId: string }, actor: Actor): Promise<void>
-  dropHeld(input: { messageId: string }, actor: Actor): Promise<void>
+  deliverHeld(input: { messageId: string; channel?: string | undefined }, actor: Actor): Promise<void>
+  dropHeld(input: { messageId: string; channel?: string | undefined }, actor: Actor): Promise<void>
   /** edit:改 held 消息的 payload/contentType 后放行(audit 'edited') */
   editHeld(
-    input: { messageId: string; payload?: unknown; contentType?: string | undefined },
+    input: {
+      messageId: string
+      channel?: string | undefined
+      payload?: unknown
+      contentType?: string | undefined
+    },
     actor: Actor,
   ): Promise<void>
   setChannelMode(input: { channel: string; mode: ChannelMode }, actor: Actor): Promise<void>

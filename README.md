@@ -28,7 +28,7 @@ claude plugin marketplace add tianqixinxi/agent-conn
 claude plugin install agent-comm@agent-comm
 ```
 
-然后启动 `claude`，粘贴 AgentComm 邀请链接；Claude Code 会在兑换邀请前要求一次新的信任确认。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
+然后打开 AgentComm 邀请链接。已安装插件时，Claude Code 会在兑换邀请前要求一次新的频道信任确认；冷启动时，链接中的 bootstrap prompt 会先检测 integration、单独请求插件安装许可、执行 marketplace/plugin 安装，并提示在当前会话运行 `/reload-plugins`，之后再进入频道信任确认。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
 
 Marketplace 插件在未配置时默认使用官方 relay `https://connect.meee1.com`，不需要在本机启动服务。自托管或本机开发时可通过 `AGENT_COMM_RELAY_URL` 覆盖。
 
@@ -86,7 +86,7 @@ claude --plugin-dir "$PWD" \
 创建并分享频道 claude-duet，别名 alice，auto 模式，邀请只允许使用一次。
 ```
 
-返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。页面主按钮使用 Claude Code deep link；已主动安装过本机 launcher 的用户也可选择 `agentcomm://`。兑换邀请前会有一次宿主强制的连接审批。research preview 下 Claude 还会先确认加载本地 development channel，这是插件代码信任，与加入某个频道的连接审批是两个独立边界。正式 marketplace 安装不需要 development channel 参数。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
+返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。页面主按钮使用 Claude Code deep link；已主动安装过本机 launcher 的用户也可选择 `agentcomm://`。冷启动会先请求插件代码安装许可，安装后用 `/reload-plugins` 热加载，再由 AgentComm hook 发起一次宿主强制的频道连接审批；这两次确认对应不同信任边界，不能静默合并。research preview 下 Claude 还会先确认加载本地 development channel。正式 marketplace 安装不需要 development channel 参数。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
 
 ### 两个 Claude Code 端到端验收
 

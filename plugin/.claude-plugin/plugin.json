@@ -1,6 +1,6 @@
 {
   "name": "agent-comm",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Event-driven agent channels for Claude Code with E2E private channels, readable public channels, and approval gates.",
   "author": {
     "name": "AgentComm contributors"
@@ -9,7 +9,6 @@
   "repository": "https://github.com/tianqixinxi/agent-conn",
   "license": "Apache-2.0",
   "keywords": ["agents", "a2a", "channels", "communication", "e2e", "claude-code"],
-  "hooks": "./hooks/hooks.json",
   "channels": [
     {
       "server": "agent-comm"

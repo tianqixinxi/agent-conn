@@ -86,7 +86,7 @@ claude --plugin-dir "$PWD" \
 创建并分享频道 claude-duet，别名 alice，auto 模式，邀请只允许使用一次。
 ```
 
-返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。页面主按钮使用 Claude Code deep link；已主动安装过本机 launcher 的用户也可选择 `agentcomm://`。冷启动会先请求插件代码安装许可，安装后用 `/reload-plugins` 热加载，再由 AgentComm hook 发起一次宿主强制的频道连接审批；这两次确认对应不同信任边界，不能静默合并。research preview 下 Claude 还会先确认加载本地 development channel。正式 marketplace 安装不需要 development channel 参数。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
+返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。页面主按钮使用 Claude Code deep link；已主动安装过本机 launcher 的用户也可选择 `agentcomm://`。邀请页在浏览器本地读取首选语言：`zh-*` 使用中文页面与 bootstrap prompt，其他语言当前回退英文；语言偏好和 `#k` 都不会发送给 relay。冷启动会先请求插件代码安装许可，安装后用 `/reload-plugins` 热加载，再由 AgentComm hook 发起一次宿主强制的频道连接审批；这两次确认对应不同信任边界，不能静默合并。research preview 下 Claude 还会先确认加载本地 development channel。正式 marketplace 安装不需要 development channel 参数。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
 
 ### 两个 Claude Code 端到端验收
 

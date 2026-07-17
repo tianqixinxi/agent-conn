@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { AgentCard, AuditEvent, InviteScope, Message, MessageEnvelope } from '@agent-comm/protocol'
 import {
   AgentCommError,
@@ -123,10 +123,18 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     return join(profile.dir, 'keys', `${channel}.key`)
   }
 
+  function trustedChannelKeyPath(channel: string, storedRef: string): string {
+    const expected = resolve(channelKeyPath(channel))
+    if (resolve(storedRef) !== expected) {
+      throw new AgentCommError('AUTH_FAILED', `untrusted E2E key reference for channel: ${channel}`)
+    }
+    return expected
+  }
+
   async function getChannelDriver(ch: StoreChannelRow): Promise<TransportBinding> {
     const driver = await getTransportBinding(ch.home)
-    if (driver.kind === 'local' || !ch.e2eKeyRef) return driver
-    return withE2e(driver, loadE2eKey(ch.e2eKeyRef))
+    if (driver.kind === 'local' || ch.visibility === 'public' || !ch.e2eKeyRef) return driver
+    return withE2e(driver, loadE2eKey(trustedChannelKeyPath(ch.name, ch.e2eKeyRef)))
   }
 
   function requireChannel(name: string): StoreChannelRow {
@@ -259,18 +267,22 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         name: input.name,
         displayName: input.displayName,
         mode: input.mode,
+        visibility: input.visibility,
         description: input.description,
         member: { alias: input.alias, nodeId: identity.nodeId, publicKey: identity.publicKey },
       })
       const createdAt = nowIso()
       const mode = input.mode ?? 'auto'
-      const e2eKeyRef = home.startsWith('local:') ? undefined : channelKeyPath(input.name)
+      const visibility = input.visibility ?? 'private'
+      const e2eKeyRef =
+        home.startsWith('local:') || visibility === 'public' ? undefined : channelKeyPath(input.name)
       if (e2eKeyRef) saveE2eKey(e2eKeyRef, newE2eKey())
       store.channels.upsert({
         name: input.name,
         home,
         displayName: input.displayName,
         mode,
+        visibility,
         description: input.description,
         myAlias: input.alias,
         scope: undefined,
@@ -297,6 +309,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         home,
         displayName: input.displayName,
         mode,
+        visibility,
         description: input.description,
         createdAt,
       }
@@ -319,6 +332,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         name: result.channel,
         home,
         mode: result.mode,
+        visibility: result.visibility,
         myAlias: input.alias,
         scope: result.scope,
         createdAt,
@@ -347,6 +361,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         home: stored.home,
         displayName: stored.displayName,
         mode: stored.mode,
+        visibility: stored.visibility,
         description: stored.description,
         createdAt: stored.createdAt,
       }
@@ -366,6 +381,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         home: c.home,
         displayName: c.displayName,
         mode: c.mode,
+        visibility: c.visibility,
         description: c.description,
         createdAt: c.createdAt,
       }))
@@ -375,10 +391,12 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       // 拉基线(§2.6):返回前先从各频道的家刷新成员镜像——成员表权威在家,本地只是缓存。
       // 家不可达(如 relay 离线)时降级用旧镜像,保证离线可读(I5)。
       const channels = input?.channel !== undefined ? [requireChannel(input.channel)] : store.channels.list()
+      const presence = new Map<string, boolean>()
       for (const ch of channels) {
         try {
           const driver = await getChannelDriver(ch)
           for (const m of await driver.members(ch.name)) {
+            if (m.online !== undefined) presence.set(`${ch.name}\0${m.nodeId}`, m.online)
             store.peers.upsert({
               channel: ch.name,
               alias: m.alias,
@@ -391,9 +409,15 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           if (!isAgentCommError(e, 'HOME_UNREACHABLE')) throw e
         }
       }
-      return store.peers
-        .list(input?.channel)
-        .map((p) => ({ alias: p.alias, nodeId: p.nodeId, channel: p.channel, card: p.card }))
+      return store.peers.list(input?.channel).map((p) => ({
+        alias: p.alias,
+        nodeId: p.nodeId,
+        channel: p.channel,
+        ...(presence.has(`${p.channel}\0${p.nodeId}`)
+          ? { online: presence.get(`${p.channel}\0${p.nodeId}`) }
+          : {}),
+        card: p.card,
+      }))
     },
 
     async publishCard(card: AgentCard, _actor) {
@@ -422,10 +446,10 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         maxUses,
       })
       let e2eKey: string | undefined
-      if (!ch.home.startsWith('local:')) {
+      if (!ch.home.startsWith('local:') && ch.visibility === 'private') {
         const e2eKeyRef = ch.e2eKeyRef ?? channelKeyPath(ch.name)
         if (ch.e2eKeyRef) {
-          e2eKey = loadE2eKey(ch.e2eKeyRef)
+          e2eKey = loadE2eKey(trustedChannelKeyPath(ch.name, ch.e2eKeyRef))
         } else {
           e2eKey = newE2eKey()
           saveE2eKey(e2eKeyRef, e2eKey)
@@ -435,7 +459,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const link = ch.home.startsWith('local:')
         ? formatLocalInviteLink(hubPathOf(ch.home), minted.joinToken)
         : ch.home.startsWith('http://') || ch.home.startsWith('https://')
-          ? formatRelayInviteLink(ch.home, minted.joinToken, e2eKey)
+          ? formatRelayInviteLink(ch.home, minted.joinToken, e2eKey, ch.visibility)
           : formatTransportInviteLink(ch.home, minted.joinToken, e2eKey)
       store.invitesMinted.insert({
         link,
@@ -452,7 +476,13 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async connect(input, actor) {
       const parsed = parseInviteLink(input.link)
-      if (parsed.kind === 'relay' || parsed.kind === 'transport') {
+      if (parsed.kind === 'local' && resolve(parsed.hubPath) !== resolve(profile.defaultHubPath)) {
+        throw new AgentCommError(
+          'INVITE_INVALID',
+          'local invitation must target this installation default hub',
+        )
+      }
+      if (parsed.kind === 'transport' || (parsed.kind === 'relay' && parsed.visibility === 'private')) {
         if (!parsed.e2eKey) {
           throw new AgentCommError('INVITE_INVALID', 'relay 邀请缺少 E2E 密钥 fragment')
         }
@@ -476,10 +506,14 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           card: input.card,
         },
       })
+      const inviteVisibility = parsed.kind === 'relay' ? parsed.visibility : 'private'
+      if (parsed.kind !== 'local' && result.visibility !== inviteVisibility) {
+        throw new AgentCommError('INVITE_INVALID', 'invite visibility does not match the relay channel')
+      }
       const alreadyKnown = store.channels.get(result.channel) !== undefined
       const createdAt = nowIso()
       let e2eKeyRef: string | undefined
-      if (parsed.kind === 'relay' || parsed.kind === 'transport') {
+      if ((parsed.kind === 'relay' || parsed.kind === 'transport') && result.visibility === 'private') {
         const e2eKey = parsed.e2eKey
         if (!e2eKey) {
           throw new AgentCommError('INVITE_INVALID', 'relay 邀请缺少 E2E 密钥 fragment')
@@ -491,6 +525,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         name: result.channel,
         home,
         mode: result.mode,
+        visibility: result.visibility,
         myAlias: input.alias,
         scope: result.scope,
         e2eKeyRef,
@@ -520,6 +555,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           alias: m.alias,
           nodeId: m.nodeId,
           channel: result.channel,
+          ...(m.online !== undefined ? { online: m.online } : {}),
           card: m.card,
         })),
       }

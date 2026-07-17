@@ -13,7 +13,7 @@
   "homepage": "https://github.com/tianqixinxi/agent-conn#readme",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -22,12 +22,13 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "agent-comm": "node --disable-warning=ExperimentalWarning --import tsx packages/agent-comm/src/main.ts",
-    "build:cli": "esbuild packages/agent-comm/src/main.ts --bundle --format=esm --platform=node --target=node22 --outdir=packages/agent-comm/dist --splitting --log-level=warning --banner:js='import { createRequire as __agentCommCr } from \"node:module\"; const require = __agentCommCr(import.meta.url);' && cp packages/agent-comm/src/store/schema.store.sql packages/agent-comm/src/store/schema.hub.sql packages/agent-comm/dist/",
+    "build:cli": "rm -rf packages/agent-comm/dist && esbuild packages/agent-comm/src/main.ts --bundle --format=esm --platform=node --target=node22 --outdir=packages/agent-comm/dist --splitting --minify-whitespace --log-level=warning --banner:js='import { createRequire as __agentCommCr } from \"node:module\"; const require = __agentCommCr(import.meta.url);' && perl -pi -e 's/[ \\t]+$//' packages/agent-comm/dist/*.js && cp packages/agent-comm/src/store/schema.store.sql packages/agent-comm/src/store/schema.hub.sql packages/agent-comm/dist/",
+    "build:plugin": "pnpm build:cli && rm -rf plugin/dist && mkdir -p plugin/dist && cp packages/agent-comm/dist/* plugin/dist/ && chmod +x plugin/bin/ac",
     "relay": "node --disable-warning=ExperimentalWarning --import tsx packages/relay/src/main.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.0",
-    "@types/node": "^24.0.0",
+    "@biomejs/biome": "^2.5.4",
+    "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",

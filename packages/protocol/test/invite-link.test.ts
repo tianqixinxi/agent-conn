@@ -16,7 +16,24 @@ describe('invite links', () => {
       kind: 'relay',
       relayUrl: 'https://relay.example.com',
       joinToken: 'tok_abc-123',
+      visibility: 'private',
       e2eKey: 'KEYKEY',
+    })
+  })
+
+  it('removes every trailing slash without a backtracking regular expression', () => {
+    const link = formatRelayInviteLink('https://relay.example.com////', 'tok_many_slashes', 'KEYKEY')
+    expect(link).toBe('https://relay.example.com/j/tok_many_slashes#k=KEYKEY')
+  })
+
+  it('round-trips a public relay invitation without an E2E key', () => {
+    const link = formatRelayInviteLink('https://relay.example.com', 'tok_public', undefined, 'public')
+    expect(link).toBe('https://relay.example.com/j/tok_public#v=public')
+    expect(parseInviteLink(link)).toEqual({
+      kind: 'relay',
+      relayUrl: 'https://relay.example.com',
+      joinToken: 'tok_public',
+      visibility: 'public',
     })
   })
 
@@ -39,6 +56,8 @@ describe('invite links', () => {
   it('rejects garbage', () => {
     expect(() => parseInviteLink('ftp://nope')).toThrow()
     expect(() => parseInviteLink('https://relay.example.com/join/abc')).toThrow()
+    expect(() => parseInviteLink('https://relay.example.com/j/a/b')).toThrow()
+    expect(() => parseInviteLink('https://relay.example.com/j/token#v=secret')).toThrow()
   })
 })
 

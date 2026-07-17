@@ -159,7 +159,11 @@ describe('relay: full lifecycle', () => {
 
     const membersPath = '/ch/support/members'
     const membersRes = await app.request(membersPath, signedRequest(lead, 'GET', membersPath))
-    const body = (await membersRes.json()) as { members: { alias: string; card?: { name: string } }[] }
+    const body = (await membersRes.json()) as {
+      members: { alias: string; card?: { name: string }; online?: boolean; lastSeenAt?: string }[]
+    }
     expect(body.members[0]?.card?.name).toBe('Lead Agent')
+    expect(body.members[0]?.online).toBe(true)
+    expect(body.members[0]?.lastSeenAt).toBeTruthy()
   })
 })

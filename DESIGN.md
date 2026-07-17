@@ -1,17 +1,18 @@
 # AgentComm 方案与实现规范
 
 > 本文是当前实现的权威架构说明。历史取舍见 [DECISIONS.md](./DECISIONS.md)。
-> 目标不是再发明一套 agent 协议，而是给 A2A 1.0 补上私密邀请、端到端加密、可靠投递和 Claude Code runtime 体验。
+> 目标不是再发明一套 agent 协议，而是给 A2A 1.0 补上邀请、私有/公开频道、可靠投递和 Claude Code runtime 体验。
 
 ## 1. 产品目标
 
-AgentComm 让两个或多个 agent runtime 通过一条链接建立私密协作关系：
+AgentComm 让两个或多个 agent runtime 通过一条链接建立协作关系：
 
 1. 普通事件主动推入 runtime，由 runtime 在已有权限内自动处理。
 2. 只有缺少输入、身份授权或治理审批时才打断用户。
 3. 分享链接可在浏览器中一键启动已经连接频道的 Claude Code。
 4. 模型只看到一个意图级 `agent_comm` 工具，不看到轮询、游标、ACK、加密、transport 等细粒度操作。
 5. AgentCard、Task、Message、Part、Artifact 和任务状态使用 A2A 1.0；AgentComm 只扩展连接与投递能力。
+6. 私有频道默认 E2E；只有创建时明确声明为 public 的频道才存储明文并提供人类可读页面。
 
 非目标：通用 workflow/DAG 编排器、agent 推理框架、长期托管 runtime、重新定义 A2A Task/Message 模型。
 
@@ -34,8 +35,8 @@ Delivery engine
         │  TransportBinding
         ├──────── local SQLite hub
         ├──────── AgentComm HTTP relay
-        ├──────── NATS JetStream (selected stable target; adapter pending)
-        └──────── AGNTCY SLIM (experimental target; adapter pending)
+        ├──────── NATS JetStream (contract only; adapter deferred)
+        └──────── AGNTCY SLIM (contract only; adapter deferred)
 ```
 
 层间边界：
@@ -86,6 +87,7 @@ AgentComm 保留 A2A 本身不负责的能力：
 - channel membership：频道内 alias 与 nodeId 绑定。
 - one-use invitation：链接携 join token，E2E key 只放 URL fragment。
 - E2E：非本地 transport 用 AES-256-GCM 封装 payload；relay 不读明文。
+- visibility：`private` 为默认且不可公开读取；`public` 有意禁用 E2E，并由 relay 提供目录、JSON feed 和 HTML 页面。
 - ordered store-and-forward：每频道由 home 分配单调 `seq`，客户端以 cursor 拉取。
 - at-least-once：`messageId` 是跨 transport 重试的幂等键。
 - governance：`auto / intercept / paused`，治理变更必须使用 human actor 并记 append-only audit。
@@ -96,6 +98,8 @@ AgentComm 保留 A2A 本身不负责的能力：
 - 一个频道只有一个排序权威 home，成员端不生成 `seq`。
 - ACK 只能在 runtime 明确 reply/complete/suspend 后发生；进程崩溃会重新投递。
 - 连接邀请需要一次明确的信任确认；连接后的安全工作自动处理。
+- 频道 visibility 只能在创建时决定，不提供 private→public 原地切换。
+- alive 是可续租的 presence，不是成员资格：运行中的 runtime 每次签名拉取、ACK、发送或成员查询都会刷新 relay 的 `last_seen_at`；45 秒没有签名活动即显示 offline，但不会踢出频道、删除身份或丢弃积压消息。Channel 默认每秒同步，因此正常运行时会持续续租。单节点生产把租约放在 SQLite；多副本阶段迁到 Redis，并保持同一 45 秒语义。
 - transport-held 的放行/拒绝与 A2A `AUTH_REQUIRED` 都会通知用户，但前者是频道治理，后者是任务生命周期，二者不可混为一个 API。
 
 ## 5. TransportBinding
@@ -123,8 +127,8 @@ interface TransportBinding {
 |---|---|---|---|
 | Local | `local:<absolute-path>` | 已实现、完整测试 | 本机零基建、多 runtime 验收 |
 | HTTP relay | `http(s)://...` | 已实现、完整测试 | 当前跨机与浏览器邀请 |
-| NATS JetStream | `nats://...` | scheme + factory contract 已就绪；adapter 未交付 | 稳定生产 transport 目标 |
-| AGNTCY SLIM | `slim://...` | scheme + factory contract 已就绪；adapter 未交付 | Node binding 成熟后的安全互操作 |
+| NATS JetStream | `nats://...` | scheme + factory contract；adapter 推迟 | 保留兼容点 |
+| AGNTCY SLIM | `slim://...` | scheme + factory contract；adapter 推迟 | 保留兼容点 |
 
 NATS/SLIM 未注册 factory 时必须显式返回 `NOT_IMPLEMENTED`，不得静默退回 HTTP 或内存队列。
 
@@ -157,6 +161,7 @@ Channel notification 分类：
 packages/protocol     official A2A adapters + AgentComm schemas/wire/link/errors
 packages/agent-comm   runtime adapter + engine + transport bindings + crypto + CLI
 packages/relay        signed HTTP relay + A2A HTTP ingress + browser join page
+plugin                self-contained Claude Code marketplace artifact
 ```
 
 依赖方向：`relay -> protocol`；`agent-comm runtime/CLI -> engine -> transport/store -> protocol`。
@@ -168,6 +173,8 @@ relay 不 import 节点实现。官方 A2A JS SDK 当前为 1.0 beta，因此所
 - `pnpm typecheck`
 - `pnpm test`
 - `pnpm lint`
+- `pnpm build:plugin` + `claude plugin validate .` + committed artifact reproducibility check
 - 两个独立 Claude Code profile 通过 HTTP relay：share → browser launch/connect → delegate → automatic reply。
 - 人工状态验证：普通消息不提示用户；`INPUT_REQUIRED` 可继续同 task；`AUTH_REQUIRED` 只在用户决定后继续。
 - 兼容验证：legacy JSON 消息仍可 reply/complete；A2A messageId 重试不会重复入队。
+- 可见性验证：private 消息只以密文落 relay 且不出现在公开 API；public 消息明文可由 HTML/JSON 阅读。

@@ -14,6 +14,7 @@ import {
   wireRoutes,
 } from '@agent-comm/protocol'
 import type { RelayDriverFactory, TransportBinding } from '../transport/api.js'
+import { normalizeRelayOrigin, safeRelayRequest } from './safe-relay-request.js'
 
 /**
  * W3 实现处:relay 家驱动(§2.4 客户端,M2)。
@@ -65,7 +66,7 @@ function toAgentCommError(body: unknown, status: number): AgentCommError {
 
 export const createRelayDriver: RelayDriverFactory = (input) => {
   const { relayUrl, identity, signRequest } = input
-  const base = relayUrl.replace(/\/+$/, '')
+  const base = normalizeRelayOrigin(relayUrl)
 
   /** 统一请求执行:签名 + 发起 + 状态码分派 + zod 解析 */
   async function call<T>(
@@ -86,23 +87,25 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       throw new AgentCommError('AUTH_FAILED', 'signRequest 回调失败,无法对 relay 请求签名', err)
     }
 
-    let res: Response
+    let res: Awaited<ReturnType<typeof safeRelayRequest>>
     try {
-      res = await fetch(`${base}${pathWithQuery}`, {
+      res = await safeRelayRequest(
+        base,
         method,
-        headers: {
+        pathWithQuery,
+        {
           'content-type': 'application/json',
           [WIRE_HEADERS.node]: identity.nodeId,
           [WIRE_HEADERS.ts]: tsMs,
           [WIRE_HEADERS.signature]: signature,
         },
-        body: body === undefined ? undefined : bodyStr,
-      })
+        body === undefined ? undefined : bodyStr,
+      )
     } catch (err) {
       throw new AgentCommError('HOME_UNREACHABLE', `relay 不可达: ${(err as Error).message}`, err)
     }
 
-    const text = await res.text()
+    const text = res.text
     let json: unknown
     if (text.length > 0) {
       try {
@@ -128,13 +131,14 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
 
   const driver: TransportBinding = {
     kind: 'relay',
-    home: relayUrl,
+    home: base,
 
     async createChannel(createInput) {
       // bootstrap 端点(wire.ts postCreate,D9 回填):创建频道并成为首个成员
       const body = {
         alias: createInput.member.alias,
         mode: createInput.mode,
+        visibility: createInput.visibility,
         displayName: createInput.displayName,
         description: createInput.description,
         card: createInput.member.card,
@@ -160,7 +164,13 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       }
       const resp = await call('POST', wireRoutes.postJoin, body, PostJoinRespSchema)
       // wire 的 PostJoinRespSchema 不携带 scope 字段(契约问题,见最终汇报);此处恒为 undefined。
-      return { channel: resp.channel, mode: resp.mode, members: resp.members, scope: undefined }
+      return {
+        channel: resp.channel,
+        mode: resp.mode,
+        visibility: resp.visibility,
+        members: resp.members,
+        scope: undefined,
+      }
     },
 
     async leave() {

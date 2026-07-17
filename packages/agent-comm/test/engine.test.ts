@@ -280,6 +280,17 @@ describe('engine (F1-F5 over a shared local hub)', () => {
     })
   })
 
+  it('rejects local invitations that point outside this installation default hub', async () => {
+    await withCtx(async ({ ws, makeEngine }) => {
+      const bob = await makeEngine('bob')
+      const otherHub = join(ws.rootDir, 'attacker-selected.db')
+      const link = `agentcomm-local:?path=${encodeURIComponent(otherHub)}&t=tok_abc`
+      await expect(bob.connect({ link, alias: 'bob' }, 'agent:bob')).rejects.toSatisfy((e: unknown) =>
+        isAgentCommError(e, 'INVITE_INVALID'),
+      )
+    })
+  })
+
   it('connect is idempotent: the same node reconnecting via the same link returns current state, no error', async () => {
     await withCtx(async ({ makeEngine }) => {
       const alice = await makeEngine('alice')

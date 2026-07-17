@@ -11,16 +11,51 @@ import { AgentCommError } from './errors.js'
  */
 
 export type ParsedInvite =
-  | { kind: 'relay'; relayUrl: string; joinToken: string; e2eKey?: string }
+  | {
+      kind: 'relay'
+      relayUrl: string
+      joinToken: string
+      visibility: 'private' | 'public'
+      e2eKey?: string
+    }
   | { kind: 'local'; hubPath: string; joinToken: string }
   | { kind: 'transport'; home: string; joinToken: string; e2eKey?: string }
 
 export const LOCAL_SCHEME = 'agentcomm-local:'
 export const TRANSPORT_SCHEME = 'agentcomm-transport:'
 
-export function formatRelayInviteLink(relayUrl: string, joinToken: string, e2eKey?: string): string {
-  const base = relayUrl.replace(/\/+$/, '')
-  const frag = e2eKey ? `#k=${e2eKey}` : ''
+function isUrlSafeToken(value: string): boolean {
+  if (value.length === 0) return false
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i)
+    const valid =
+      (code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 90) ||
+      code === 95 ||
+      (code >= 97 && code <= 122) ||
+      code === 45
+    if (!valid) return false
+  }
+  return true
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1
+  return value.slice(0, end)
+}
+
+export function formatRelayInviteLink(
+  relayUrl: string,
+  joinToken: string,
+  e2eKey?: string,
+  visibility: 'private' | 'public' = 'private',
+): string {
+  const base = trimTrailingSlashes(relayUrl)
+  const fragment = new URLSearchParams()
+  if (e2eKey) fragment.set('k', e2eKey)
+  if (visibility === 'public') fragment.set('v', 'public')
+  const frag = fragment.size > 0 ? `#${fragment.toString()}` : ''
   return `${base}/j/${joinToken}${frag}`
 }
 
@@ -65,14 +100,23 @@ export function parseInviteLink(link: string): ParsedInvite {
   }
   if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
     const u = new URL(trimmed)
-    const m = u.pathname.match(/^\/j\/([A-Za-z0-9_-]+)$/)
-    if (!m?.[1]) throw new AgentCommError('INVITE_INVALID', 'relay invite link must be <relay>/j/<token>')
+    const prefix = '/j/'
+    const joinToken = u.pathname.startsWith(prefix) ? u.pathname.slice(prefix.length) : ''
+    if (!isUrlSafeToken(joinToken)) {
+      throw new AgentCommError('INVITE_INVALID', 'relay invite link must be <relay>/j/<token>')
+    }
     const frag = new URLSearchParams(u.hash.replace(/^#/, ''))
     const e2eKey = frag.get('k') ?? undefined
+    const visibilityValue = frag.get('v')
+    if (visibilityValue !== null && visibilityValue !== 'public' && visibilityValue !== 'private') {
+      throw new AgentCommError('INVITE_INVALID', 'relay invite link has invalid visibility')
+    }
+    const visibility = visibilityValue === 'public' ? 'public' : 'private'
     return {
       kind: 'relay',
       relayUrl: `${u.protocol}//${u.host}`,
-      joinToken: m[1],
+      joinToken,
+      visibility,
       ...(e2eKey ? { e2eKey } : {}),
     }
   }

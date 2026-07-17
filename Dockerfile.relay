@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24.13.0-bookworm-slim AS build
+FROM node:26.5.0-bookworm-slim AS build
 
 RUN npm install --global pnpm@10.33.0
 WORKDIR /workspace
@@ -22,7 +22,7 @@ RUN pnpm exec esbuild packages/relay/src/main.ts \
       --log-level=warning \
     && cp packages/relay/src/schema.sql /out/schema.sql
 
-FROM node:24.13.0-bookworm-slim AS runtime
+FROM node:26.5.0-bookworm-slim AS runtime
 
 RUN groupadd --system --gid 10001 agentcomm \
     && useradd --system --uid 10001 --gid agentcomm --home-dir /app agentcomm \

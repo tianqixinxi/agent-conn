@@ -1,6 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { isAgentCommError } from '@agent-comm/protocol'
 import { describe, expect, it } from 'vitest'
-import { newE2eKey, open, seal } from '../src/crypto/e2e.js'
+import { loadE2eKey, newE2eKey, open, saveE2eKey, seal } from '../src/crypto/e2e.js'
 
 function expectAuthFailed(fn: () => void): void {
   let threw = false
@@ -34,6 +37,22 @@ describe('crypto/e2e', () => {
     const b = newE2eKey()
     expect(Buffer.from(a, 'base64url')).toHaveLength(32)
     expect(a).not.toBe(b)
+  })
+
+  it('atomically replaces a key symlink without overwriting its target', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-comm-key-'))
+    try {
+      const target = join(root, 'outside.txt')
+      const keyPath = join(root, 'channel.key')
+      writeFileSync(target, 'do-not-touch')
+      symlinkSync(target, keyPath)
+      const key = newE2eKey()
+      saveE2eKey(keyPath, key)
+      expect(loadE2eKey(keyPath)).toBe(key)
+      expect(readFileSync(target, 'utf8')).toBe('do-not-touch')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('seal/open 往返还原 payload 与 contentType', () => {

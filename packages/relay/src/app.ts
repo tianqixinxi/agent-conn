@@ -35,14 +35,19 @@ import { Hono } from 'hono'
 import { createAuthMiddleware, requireHeaderNode } from './auth.js'
 import { errorStatus } from './http.js'
 import { renderJoinPage } from './join-page.js'
+import { renderLandingPage, renderPublicChannel, renderPublicDirectory } from './public-pages.js'
 import type { RelayDb } from './store.js'
 import {
   ackCursor,
   appendMessages,
   createChannelBootstrap,
   createInvite,
+  getPublicChannel,
   joinViaInvite,
   listMembers,
+  listPublicChannelMessages,
+  listPublicChannels,
+  listRecentPublicChannelMessages,
   memberRowToWire,
   openDb,
   pullMessages,
@@ -157,6 +162,46 @@ export function createApp(deps: RelayDeps): Hono {
   app.use('*', createAuthMiddleware(db))
 
   app.get('/healthz', (c) => c.json({ ok: true }))
+
+  const publicHtml = (c: Context, html: string): Response =>
+    c.body(html, 200, {
+      'content-type': 'text/html; charset=UTF-8',
+      'content-security-policy':
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+    })
+
+  app.get('/', (c) => publicHtml(c, renderLandingPage(listPublicChannels(db))))
+  app.get('/public', (c) => publicHtml(c, renderPublicDirectory(listPublicChannels(db))))
+
+  app.get('/api/public/channels', (c) => c.json({ channels: listPublicChannels(db) }))
+  app.get(
+    '/api/public/channels/:channel/messages',
+    withErrors(async (c) => {
+      const channel = requireChannelParam(c)
+      const afterValue = Number(c.req.query('after') ?? '0')
+      const limitValue = Number(c.req.query('limit') ?? '100')
+      if (!Number.isInteger(afterValue) || afterValue < 0) {
+        throw new AgentCommError('INVALID_INPUT', 'after must be a non-negative integer')
+      }
+      if (!Number.isInteger(limitValue) || limitValue < 1 || limitValue > 200) {
+        throw new AgentCommError('INVALID_INPUT', 'limit must be an integer between 1 and 200')
+      }
+      const messages = listPublicChannelMessages(db, channel, afterValue, limitValue)
+      if (!messages) return c.notFound()
+      return c.json({ channel, messages })
+    }),
+  )
+
+  app.get('/public/:channel', (c) => {
+    const channelName = c.req.param('channel')
+    if (!channelName) return c.notFound()
+    const channel = getPublicChannel(db, channelName)
+    const messages = listRecentPublicChannelMessages(db, channelName, 100)
+    if (!channel || !messages) return c.notFound()
+    return publicHtml(c, renderPublicChannel(channel, messages))
+  })
 
   app.get('/.well-known/agent-card.json', (c) => {
     if (!deps.enableA2AIngress) return c.notFound()
@@ -303,6 +348,7 @@ export function createApp(deps: RelayDeps): Hono {
         nodeId: parsed.data.node.nodeId,
         publicKey: parsed.data.node.publicKey,
         mode: parsed.data.mode,
+        visibility: parsed.data.visibility,
         displayName: parsed.data.displayName,
         description: parsed.data.description,
         card: parsed.data.card,

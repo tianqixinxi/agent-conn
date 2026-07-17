@@ -1,8 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import type { CipherPayload } from '@agent-comm/protocol'
 import { AgentCommError } from '@agent-comm/protocol'
+import { readPrivateFile, replacePrivateFile } from './secure-file.js'
 
 /**
  * W3 实现处:E2E(§2.5,M2)。AES-256-GCM(node:crypto)。
@@ -31,13 +30,11 @@ export function newE2eKey(): string {
  */
 export function saveE2eKey(keyPath: string, e2eKeyB64url: string): void {
   validateE2eKey(e2eKeyB64url)
-  mkdirSync(dirname(keyPath), { recursive: true, mode: 0o700 })
-  writeFileSync(keyPath, `${e2eKeyB64url}\n`, { mode: 0o600 })
-  chmodSync(keyPath, 0o600)
+  replacePrivateFile(keyPath, `${e2eKeyB64url}\n`)
 }
 
 export function loadE2eKey(keyPath: string): string {
-  const key = readFileSync(keyPath, 'utf8').trim()
+  const key = readPrivateFile(keyPath).trim()
   validateE2eKey(key)
   return key
 }

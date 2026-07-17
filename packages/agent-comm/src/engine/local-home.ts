@@ -52,6 +52,7 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
           name: input.name,
           displayName: input.displayName,
           mode: input.mode ?? 'auto',
+          visibility: input.visibility ?? 'private',
           description: input.description,
           createdAt,
         })
@@ -86,7 +87,13 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
             input.member.card ?? existingByNode.card,
           )
           const members = hub.members.list(channel)
-          return { channel, mode: chRow.mode, members: members.map(toMemberOut), scope: existingByNode.scope }
+          return {
+            channel,
+            mode: chRow.mode,
+            visibility: chRow.visibility,
+            members: members.map(toMemberOut),
+            scope: existingByNode.scope,
+          }
         }
 
         if (invite.expiresAt !== undefined && Date.parse(invite.expiresAt) < Date.now()) {
@@ -118,7 +125,13 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
           actor: `agent:${input.member.alias}`,
         })
         const members = hub.members.list(channel)
-        return { channel, mode: chRow.mode, members: members.map(toMemberOut), scope: invite.scope }
+        return {
+          channel,
+          mode: chRow.mode,
+          visibility: chRow.visibility,
+          members: members.map(toMemberOut),
+          scope: invite.scope,
+        }
       })
     },
 

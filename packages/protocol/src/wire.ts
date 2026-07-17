@@ -4,7 +4,9 @@ import {
   AliasSchema,
   ChannelModeSchema,
   ChannelNameSchema,
+  ChannelVisibilitySchema,
   InviteScopeSchema,
+  IsoSchema,
   MessageEnvelopeSchema,
   MessageSchema,
   NodeIdSchema,
@@ -104,16 +106,26 @@ export const PostJoinReqSchema = z.object({
   node: z.object({ nodeId: NodeIdSchema, publicKey: z.string().min(1) }),
   card: AgentCardSchema.optional(),
 })
+const WireMemberSchema = z.object({
+  alias: AliasSchema,
+  nodeId: NodeIdSchema,
+  card: AgentCardSchema.optional(),
+  /** Presence is a renewable soft lease; it does not change channel membership. */
+  lastSeenAt: IsoSchema.optional(),
+  online: z.boolean().optional(),
+})
 export const PostJoinRespSchema = z.object({
   channel: ChannelNameSchema,
   mode: ChannelModeSchema,
+  visibility: ChannelVisibilitySchema.default('private'),
   myAlias: AliasSchema,
-  members: z.array(z.object({ alias: AliasSchema, nodeId: NodeIdSchema, card: AgentCardSchema.optional() })),
+  members: z.array(WireMemberSchema),
 })
 
 export const PostCreateChannelReqSchema = z.object({
   alias: AliasSchema,
   mode: ChannelModeSchema.optional(),
+  visibility: ChannelVisibilitySchema.optional(),
   displayName: z.string().optional(),
   description: z.string().optional(),
   card: AgentCardSchema.optional(),
@@ -133,7 +145,7 @@ export const PostInvitesRespSchema = z.object({
 })
 
 export const GetMembersRespSchema = z.object({
-  members: z.array(z.object({ alias: AliasSchema, nodeId: NodeIdSchema, card: AgentCardSchema.optional() })),
+  members: z.array(WireMemberSchema),
 })
 
 export const PostCardReqSchema = z.object({ card: AgentCardSchema })

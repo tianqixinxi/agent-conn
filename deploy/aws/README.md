@@ -154,6 +154,10 @@ The host performs a SQLite online backup every day at approximately 03:17 UTC an
 `s3://BACKUP_BUCKET/relay/`. Local backup copies older than two days are removed; S3 copies default to
 30-day retention. A release never copies a live SQLite file directly.
 
+The single-node relay also stores renewable presence leases in SQLite. Authenticated channel activity
+refreshes `last_seen_at`; after 45 seconds without activity a runtime is shown as offline, while its
+membership and queued messages remain intact. This is display/routing state, not a liveness-based delete.
+
 Useful commands can be executed from AWS Systems Manager Session Manager or Run Command:
 
 ```bash

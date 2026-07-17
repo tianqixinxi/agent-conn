@@ -13,7 +13,13 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { NotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod/v4'
-import { type ChannelNotification, createChannelBridge } from '../src/mcp/channel.js'
+import {
+  type ChannelNotification,
+  createChannelBridge,
+  DEFAULT_CHANNEL_RELAY_URL,
+  resolveChannelRelayUrl,
+  shouldRehomeDevelopmentChannel,
+} from '../src/mcp/channel.js'
 import { FakeEngine, makeHeldMessage } from './fake-engine.js'
 
 function message(overrides: Partial<Message> = {}): Message {
@@ -64,6 +70,22 @@ const channelNotificationSchema = NotificationSchema.extend({
 })
 
 describe('Claude Code channel bridge', () => {
+  it('defaults marketplace channels to the official relay while allowing self-hosted overrides', () => {
+    expect(resolveChannelRelayUrl({})).toBe(DEFAULT_CHANNEL_RELAY_URL)
+    expect(resolveChannelRelayUrl({ AGENT_COMM_RELAY_URL: 'https://relay.example' })).toBe(
+      'https://relay.example',
+    )
+  })
+
+  it('migrates only legacy development homes to the official relay', () => {
+    expect(shouldRehomeDevelopmentChannel('http://127.0.0.1:8787', DEFAULT_CHANNEL_RELAY_URL)).toBe(true)
+    expect(shouldRehomeDevelopmentChannel('http://localhost:8787', DEFAULT_CHANNEL_RELAY_URL)).toBe(true)
+    expect(shouldRehomeDevelopmentChannel('local:/tmp/agent-comm.db', DEFAULT_CHANNEL_RELAY_URL)).toBe(true)
+    expect(shouldRehomeDevelopmentChannel('https://self-hosted.example', DEFAULT_CHANNEL_RELAY_URL)).toBe(
+      false,
+    )
+  })
+
   it('exposes one intent-level tool instead of the legacy fine-grained tool surface', async () => {
     const { client } = await connectBridge(new FakeEngine())
     const { tools } = await client.listTools()
@@ -220,6 +242,46 @@ describe('Claude Code channel bridge', () => {
     expect(engine.calls.find((call) => call.method === 'createInvite')?.args[0]).toEqual({
       channel: 'duet',
       maxUses: 1,
+    })
+  })
+
+  it('re-homes a stale localhost channel before creating its invite', async () => {
+    const engine = new FakeEngine({
+      profileName: 'alice',
+      channels: [
+        {
+          name: 'claude-duet-0716',
+          home: 'http://127.0.0.1:8787',
+          mode: 'auto',
+          visibility: 'private',
+          createdAt: nowIso(),
+        },
+      ],
+      memberships: [{ channel: 'claude-duet-0716', alias: 'alice', home: 'http://127.0.0.1:8787' }],
+    })
+    engine.createInvite = async (input, actor) => {
+      engine.calls.push({ method: 'createInvite', args: [input], actor })
+      return { link: `${DEFAULT_CHANNEL_RELAY_URL}/j/token#k=secret` }
+    }
+    const bridge = createChannelBridge(engine, {
+      defaultHome: DEFAULT_CHANNEL_RELAY_URL,
+      notify: async () => {},
+      stderr: () => {},
+    })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'channel-test', version: '0.0.0' }, { capabilities: {} })
+    await Promise.all([bridge.server.connect(serverTransport), client.connect(clientTransport)])
+
+    const result = await client.callTool({
+      name: 'agent_comm',
+      arguments: { operation: 'share', channel: 'claude-duet-0716', alias: 'alice' },
+    })
+
+    expect(result.isError).toBeFalsy()
+    expect(engine.calls.find((call) => call.method === 'createChannel')?.args[0]).toMatchObject({
+      name: 'claude-duet-0716',
+      alias: 'alice',
+      home: DEFAULT_CHANNEL_RELAY_URL,
     })
   })
 

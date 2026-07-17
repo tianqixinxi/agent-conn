@@ -30,6 +30,8 @@ claude plugin install agent-comm@agent-comm
 
 然后启动 `claude`，粘贴 AgentComm 邀请链接；Claude Code 会在兑换邀请前要求一次新的信任确认。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
 
+Marketplace 插件在未配置时默认使用官方 relay `https://connect.meee1.com`，不需要在本机启动服务。自托管或本机开发时可通过 `AGENT_COMM_RELAY_URL` 覆盖。
+
 仓库本身已经是可安装的公开 marketplace。进入 Anthropic `claude-plugins-official` 还需要维护者通过 Claude.ai 或 Console 的官方表单提交审核；GitHub release pipeline 会校验、打包并发布插件产物，但不能代替 Anthropic 的人工审核。
 
 ## 开发

@@ -22,9 +22,10 @@ import { createA2AChannelAdapter } from '../a2a/channel-adapter.js'
 import { DEFAULT_INBOX_CAP, type ProfilePaths } from '../config.js'
 import type { Actor, Engine } from '../engine/api.js'
 
-const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.3.1' } as const
+const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.3.2' } as const
 const DEFAULT_POLL_MS = 1_000
 const MAX_PENDING_EVENTS = DEFAULT_INBOX_CAP
+export const DEFAULT_CHANNEL_RELAY_URL = 'https://connect.meee1.com'
 
 const agentCommInput = z.object({
   operation: z.enum([
@@ -64,7 +65,7 @@ export type ChannelNotifier = (notification: ChannelNotification) => Promise<voi
 
 export interface ChannelBridgeOptions {
   pollIntervalMs?: number | undefined
-  /** 新建可分享频道时使用；通常来自 AGENT_COMM_RELAY_URL。缺省则建立本机频道。 */
+  /** 新建可分享频道时使用；正式插件缺省连接官方 relay，自托管可用环境变量覆盖。 */
   defaultHome?: string | undefined
   /** 用户可见的频道别名；身份 profile 仍按 Claude session 隔离。 */
   defaultAlias?: string | undefined
@@ -90,6 +91,28 @@ function textResult(value: unknown, isError = false) {
 function requireString(value: string | undefined, field: string): string {
   if (!value) throw new AgentCommError('INVALID_INPUT', `${field} is required`)
   return value
+}
+
+export function resolveChannelRelayUrl(env: NodeJS.ProcessEnv = process.env): string {
+  return env.AGENT_COMM_RELAY_URL || DEFAULT_CHANNEL_RELAY_URL
+}
+
+/**
+ * v0.3.1 及更早版本会把未配置的 marketplace 频道建在本机或 localhost relay。
+ * 只迁移这些明确的开发 home；用户主动加入的其他远程/self-hosted home 必须保留。
+ */
+export function shouldRehomeDevelopmentChannel(existingHome: string, defaultHome?: string): boolean {
+  if (!defaultHome || existingHome === defaultHome || !defaultHome.startsWith('https://')) return false
+  if (existingHome.startsWith('local:')) return true
+  try {
+    const url = new URL(existingHome)
+    return (
+      url.protocol === 'http:' &&
+      (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '::1')
+    )
+  } catch {
+    return false
+  }
 }
 
 function addPendingEvent(events: Map<string, Message>, message: Message): string[] {
@@ -248,7 +271,7 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
             const who = await engine.whoami()
             const alias = args.alias ?? opts.defaultAlias ?? who.profile
             const existing = (await engine.listChannels()).find((item) => item.name === channel)
-            if (!existing) {
+            if (!existing || shouldRehomeDevelopmentChannel(existing.home, opts.defaultHome)) {
               await engine.createChannel(
                 {
                   name: channel,
@@ -492,7 +515,7 @@ export async function runChannel(profile: ProfilePaths, opts: RunChannelOptions 
     })())
   const bridge = createChannelBridge(engine, {
     ...opts,
-    defaultHome: opts.defaultHome ?? process.env.AGENT_COMM_RELAY_URL,
+    defaultHome: opts.defaultHome ?? resolveChannelRelayUrl(),
     defaultAlias: opts.defaultAlias ?? process.env.AGENT_COMM_CHANNEL_ALIAS,
   })
 

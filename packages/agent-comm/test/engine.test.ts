@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { isAgentCommError } from '@agent-comm/protocol'
+import { AgentCommError, isAgentCommError } from '@agent-comm/protocol'
 import { describe, expect, it } from 'vitest'
 import type { Engine, EngineDeps, TransportBindingFactory } from '../src/engine/api.js'
 import { createEngine } from '../src/engine/engine.js'
@@ -339,6 +339,60 @@ describe('engine (F1-F5 over a shared local hub)', () => {
       await expect(
         alice.connect({ link: `http://127.0.0.1:1/j/tok_abc#k=${e2eKey}`, alias: 'alice' }, 'agent:alice'),
       ).rejects.toSatisfy((e: unknown) => isAgentCommError(e, 'HOME_UNREACHABLE'))
+    })
+  })
+
+  it('isolates an unreachable legacy channel from healthy background work', async () => {
+    await withCtx(async ({ ws, makeEngine }) => {
+      let staleOffline = false
+      let healthyCardUpdates = 0
+      const factory: TransportBindingFactory = async ({ home }) => {
+        if (home !== 'nats://stale.example' && home !== 'nats://healthy.example') return undefined
+        const local = await openLocalHome(
+          join(ws.rootDir, home === 'nats://stale.example' ? 'stale.db' : 'healthy.db'),
+        )
+        const stale = home === 'nats://stale.example'
+        return {
+          ...local,
+          kind: 'nats',
+          home,
+          async updateCard(input) {
+            if (stale && staleOffline) throw new AgentCommError('HOME_UNREACHABLE', 'stale relay offline')
+            if (!stale) healthyCardUpdates += 1
+            await local.updateCard(input)
+          },
+          async pullAfter(channel, after, opts) {
+            if (stale && staleOffline) throw new AgentCommError('HOME_UNREACHABLE', 'stale relay offline')
+            return local.pullAfter(channel, after, opts)
+          },
+          async listHeld(channel) {
+            if (stale && staleOffline) throw new AgentCommError('HOME_UNREACHABLE', 'stale relay offline')
+            return local.listHeld(channel)
+          },
+        }
+      }
+      const alice = await makeEngine('alice', { transportBindingFactories: [factory] })
+      await alice.createChannel(
+        { name: 'stale', alias: 'alice', home: 'nats://stale.example' },
+        'agent:alice',
+      )
+      await alice.createChannel(
+        { name: 'healthy', alias: 'alice', home: 'nats://healthy.example' },
+        'agent:alice',
+      )
+      staleOffline = true
+
+      await expect(alice.publishCard({ name: 'alice' }, 'agent:alice')).resolves.toBeUndefined()
+      expect(healthyCardUpdates).toBe(1)
+      await expect(alice.readInbox({})).resolves.toEqual([])
+      await expect(alice.listHeld()).resolves.toEqual([])
+
+      await expect(alice.syncOnce('stale')).rejects.toSatisfy((e: unknown) =>
+        isAgentCommError(e, 'HOME_UNREACHABLE'),
+      )
+      await expect(alice.listHeld('stale')).rejects.toSatisfy((e: unknown) =>
+        isAgentCommError(e, 'HOME_UNREACHABLE'),
+      )
     })
   })
 

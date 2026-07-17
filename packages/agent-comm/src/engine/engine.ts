@@ -197,7 +197,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       try {
         held = await driver.listHeld(ch.name)
       } catch (err) {
-        if (isAgentCommError(err, 'NOT_IMPLEMENTED')) continue
+        if (isAgentCommError(err, 'NOT_IMPLEMENTED') || isAgentCommError(err, 'HOME_UNREACHABLE')) continue
         throw err
       }
       const match = held.find((m) => m.messageId === messageId)
@@ -422,15 +422,21 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async publishCard(card: AgentCard, _actor) {
       for (const ch of store.channels.list()) {
-        const driver = await getChannelDriver(ch)
-        await driver.updateCard({ channel: ch.name, alias: ch.myAlias, nodeId: identity.nodeId, card })
-        store.peers.upsert({
-          channel: ch.name,
-          alias: ch.myAlias,
-          nodeId: identity.nodeId,
-          card,
-          updatedAt: nowIso(),
-        })
+        try {
+          const driver = await getChannelDriver(ch)
+          await driver.updateCard({ channel: ch.name, alias: ch.myAlias, nodeId: identity.nodeId, card })
+          store.peers.upsert({
+            channel: ch.name,
+            alias: ch.myAlias,
+            nodeId: identity.nodeId,
+            card,
+            updatedAt: nowIso(),
+          })
+        } catch (err) {
+          // AgentCard 是跨 membership 的 best-effort presence 更新；一个退役 relay 不应阻断健康频道。
+          if (isAgentCommError(err, 'HOME_UNREACHABLE')) continue
+          throw err
+        }
       }
     },
 
@@ -648,59 +654,69 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       let pulled = 0
       for (const ch of channels) {
-        const driver = await getChannelDriver(ch)
-        const after = store.syncState.get(ch.name)
-        const { messages, head } = await driver.pullAfter(ch.name, after, { limit: DEFAULT_SYNC_LIMIT })
+        try {
+          const driver = await getChannelDriver(ch)
+          const after = store.syncState.get(ch.name)
+          const { messages, head } = await driver.pullAfter(ch.name, after, { limit: DEFAULT_SYNC_LIMIT })
 
-        for (const m of messages) {
-          if (m.from === ch.myAlias) {
-            // 自己发的:同步家上最新状态(如 intercept 放行后 held→delivered)到本地镜像,不进 inbox
-            const mine = store.messages.get(m.messageId)
-            if (mine && (mine.status !== m.status || mine.seq !== m.seq)) {
-              store.messages.replace({
-                ...mine,
-                seq: m.seq,
-                status: m.status,
-                payload: m.payload,
-                contentType: m.contentType,
-                deliveredAt: m.status === 'delivered' ? (mine.deliveredAt ?? nowIso()) : mine.deliveredAt,
-              })
+          for (const m of messages) {
+            if (m.from === ch.myAlias) {
+              // 自己发的:同步家上最新状态(如 intercept 放行后 held→delivered)到本地镜像,不进 inbox
+              const mine = store.messages.get(m.messageId)
+              if (mine && (mine.status !== m.status || mine.seq !== m.seq)) {
+                store.messages.replace({
+                  ...mine,
+                  seq: m.seq,
+                  status: m.status,
+                  payload: m.payload,
+                  contentType: m.contentType,
+                  deliveredAt: m.status === 'delivered' ? (mine.deliveredAt ?? nowIso()) : mine.deliveredAt,
+                })
+              }
+              continue
             }
-            continue
-          }
-          if (m.to !== ch.myAlias && m.to !== '*') continue // 不是发给我的
-          if (store.messages.get(m.messageId)) continue // messageId 去重(I3)
+            if (m.to !== ch.myAlias && m.to !== '*') continue // 不是发给我的
+            if (store.messages.get(m.messageId)) continue // messageId 去重(I3)
 
-          if (m.replyBy !== undefined && Date.parse(m.replyBy) < Date.now()) {
-            store.messages.insert({ ...fromProtocolMessage(m, ch.name), status: 'dropped' })
+            if (m.replyBy !== undefined && Date.parse(m.replyBy) < Date.now()) {
+              store.messages.insert({ ...fromProtocolMessage(m, ch.name), status: 'dropped' })
+              appendAudit({
+                event: 'dropped',
+                messageId: m.messageId,
+                channel: ch.name,
+                from: m.from,
+                to: m.to,
+                actor: `agent:${ch.myAlias}`,
+                detail: 'replyBy expired',
+              })
+              continue
+            }
+
+            const ts = nowIso()
+            store.messages.insert({
+              ...fromProtocolMessage(m, ch.name),
+              status: 'delivered',
+              deliveredAt: ts,
+            })
+            store.inbox.insert({ messageId: m.messageId, addedAt: ts })
             appendAudit({
-              event: 'dropped',
+              event: 'delivered',
               messageId: m.messageId,
               channel: ch.name,
               from: m.from,
               to: m.to,
               actor: `agent:${ch.myAlias}`,
-              detail: 'replyBy expired',
             })
-            continue
+            pulled += 1
           }
 
-          const ts = nowIso()
-          store.messages.insert({ ...fromProtocolMessage(m, ch.name), status: 'delivered', deliveredAt: ts })
-          store.inbox.insert({ messageId: m.messageId, addedAt: ts })
-          appendAudit({
-            event: 'delivered',
-            messageId: m.messageId,
-            channel: ch.name,
-            from: m.from,
-            to: m.to,
-            actor: `agent:${ch.myAlias}`,
-          })
-          pulled += 1
+          await driver.ackCursor(ch.name, identity.nodeId, head)
+          store.syncState.set(ch.name, head)
+        } catch (err) {
+          // 全量后台同步隔离坏频道；显式同步某频道仍返回错误，便于诊断和重试。
+          if (channelFilter === undefined && isAgentCommError(err, 'HOME_UNREACHABLE')) continue
+          throw err
         }
-
-        await driver.ackCursor(ch.name, identity.nodeId, head)
-        store.syncState.set(ch.name, head)
       }
       enforceInboxCap()
       if (pulled > 0) deps.onInboxChange?.()
@@ -716,7 +732,12 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         try {
           held = await driver.listHeld(ch.name)
         } catch (err) {
-          if (isAgentCommError(err, 'NOT_IMPLEMENTED')) continue
+          if (
+            isAgentCommError(err, 'NOT_IMPLEMENTED') ||
+            (channelFilter === undefined && isAgentCommError(err, 'HOME_UNREACHABLE'))
+          ) {
+            continue
+          }
           throw err
         }
         for (const m of held) out.push({ message: m, channel: ch.name })

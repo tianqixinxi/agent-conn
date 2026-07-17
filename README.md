@@ -115,6 +115,8 @@ claude --plugin-dir "$PWD" \
 
 Channel 只在 Claude Code 会话运行期间接收事件；需要常驻处理时，应把 Claude 放在持久终端或后台进程中。远程 relay 的消息体已经 E2E 加密；远程 `intercept` 治理端点仍属于后续里程碑，本机频道的治理门已可用。
 
+同一 profile 加入多个频道时按频道隔离故障：退役或暂时不可达的旧 relay 不会阻断其他健康频道的后台同步、AgentCard 更新或审批事件；显式操作该失效频道仍会返回可诊断错误。
+
 ### 公开频道
 
 创建时明确指定 `visibility=public` 即可得到公开频道：

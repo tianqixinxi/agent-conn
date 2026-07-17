@@ -10,16 +10,13 @@ data "aws_ssm_parameter" "al2023_ami" {
 locals {
   name              = "${var.project_name}-${var.environment}"
   backup_bucket     = "${local.name}-backups-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  runtime_boundary  = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${local.name}-relay-boundary"
   enable_route53    = var.route53_zone_id != ""
   enable_cloudflare = var.cloudflare_zone_id != ""
   a2a_ingress_value = var.enable_a2a_ingress ? "1" : "0"
   public_origin_cidrs = local.enable_cloudflare && var.cloudflare_proxied ? var.cloudflare_ipv4_cidrs : [
     "0.0.0.0/0"
   ]
-}
-
-data "aws_iam_policy" "runtime_boundary" {
-  name = "${local.name}-relay-boundary"
 }
 
 check "single_dns_provider" {
@@ -177,7 +174,7 @@ resource "aws_cloudwatch_log_group" "relay" {
 
 resource "aws_iam_role" "instance" {
   name                 = "${local.name}-relay-instance"
-  permissions_boundary = data.aws_iam_policy.runtime_boundary.arn
+  permissions_boundary = local.runtime_boundary
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

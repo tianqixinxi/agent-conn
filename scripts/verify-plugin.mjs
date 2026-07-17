@@ -12,6 +12,11 @@ const tag = process.argv[2]
 if (developmentManifest.version !== releaseManifest.version) {
   throw new Error('development and release plugin versions differ')
 }
+// Claude Code loads the conventional hooks/hooks.json automatically. Declaring it again in the
+// manifest makes a freshly installed plugin fail with "Duplicate hooks file detected".
+if ('hooks' in developmentManifest || 'hooks' in releaseManifest) {
+  throw new Error('standard hooks/hooks.json must not be duplicated in the plugin manifest')
+}
 if (tag?.startsWith('v') && tag.slice(1) !== releaseManifest.version) {
   throw new Error(`release tag ${tag} does not match plugin version ${releaseManifest.version}`)
 }

@@ -353,12 +353,6 @@ resource "aws_iam_role_policy" "github_infra" {
             "iam:PassedToService" = "ec2.amazonaws.com"
           }
         }
-      },
-      {
-        Sid      = "ReadRuntimeBoundary"
-        Effect   = "Allow"
-        Action   = ["iam:GetPolicy"]
-        Resource = aws_iam_policy.runtime_boundary.arn
       }
     ]
   })

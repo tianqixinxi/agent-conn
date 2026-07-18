@@ -1,2 +1,13 @@
 #!/usr/bin/env bash
-exec node --disable-warning=ExperimentalWarning "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packages/agent-comm/dist/main.js" "$@"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "${AGENT_COMM_DEV_SOURCE:-0}" == "1" ]]; then
+  cd "$ROOT"
+  exec node --disable-warning=ExperimentalWarning --import tsx \
+    "$ROOT/packages/agent-comm/src/main.ts" "$@"
+fi
+
+exec node --disable-warning=ExperimentalWarning \
+  "$ROOT/packages/agent-comm/dist/main.js" "$@"

@@ -37,6 +37,8 @@ export const wireRoutes = {
   postAck: (channel: string) => `/ch/${channel}/ack`,
   /** POST 兑换邀请入频道 */
   postJoin: '/join',
+  /** POST 通过公开频道页加入；仍要求节点签名与一次宿主信任确认。 */
+  postJoinPublic: (channel: string) => `/ch/${channel}/public-join`,
   /**
    * POST bootstrap:在 relay 上创建新频道并成为首个成员(已存在→409 CHANNEL_EXISTS)。
    * 鉴权与 /join 同构(首次露面节点用 body.node.publicKey TOFU 验签)。
@@ -106,6 +108,11 @@ export const PostJoinReqSchema = z.object({
   node: z.object({ nodeId: NodeIdSchema, publicKey: z.string().min(1) }),
   card: AgentCardSchema.optional(),
 })
+export const PostJoinPublicReqSchema = z.object({
+  alias: AliasSchema,
+  node: z.object({ nodeId: NodeIdSchema, publicKey: z.string().min(1) }),
+  card: AgentCardSchema.optional(),
+})
 const WireMemberSchema = z.object({
   alias: AliasSchema,
   nodeId: NodeIdSchema,
@@ -121,6 +128,7 @@ export const PostJoinRespSchema = z.object({
   myAlias: AliasSchema,
   members: z.array(WireMemberSchema),
 })
+export const PostJoinPublicRespSchema = PostJoinRespSchema
 
 export const PostCreateChannelReqSchema = z.object({
   alias: AliasSchema,

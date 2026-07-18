@@ -505,22 +505,27 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const home =
         parsed.kind === 'local'
           ? localHomeString(parsed.hubPath)
-          : parsed.kind === 'relay'
+          : parsed.kind === 'relay' || parsed.kind === 'public'
             ? parsed.relayUrl
             : parsed.home
       const driver = await getTransportBinding(home)
-      const result = await driver.join({
-        // local/relay 的兑换都由 token 反查频道,这里的 channel 不被驱动实现使用(见 local-home.ts 注释)
-        channel: '',
-        joinToken: parsed.joinToken,
-        member: {
-          alias: input.alias,
-          nodeId: identity.nodeId,
-          publicKey: identity.publicKey,
-          card: input.card,
-        },
-      })
-      const inviteVisibility = parsed.kind === 'relay' ? parsed.visibility : 'private'
+      const member = {
+        alias: input.alias,
+        nodeId: identity.nodeId,
+        publicKey: identity.publicKey,
+        card: input.card,
+      }
+      const result =
+        parsed.kind === 'public'
+          ? await driver.joinPublic({ channel: parsed.channel, member })
+          : await driver.join({
+              // local/relay 的兑换都由 token 反查频道,这里的 channel 不被驱动实现使用。
+              channel: '',
+              joinToken: parsed.joinToken,
+              member,
+            })
+      const inviteVisibility =
+        parsed.kind === 'public' ? 'public' : parsed.kind === 'relay' ? parsed.visibility : 'private'
       if (parsed.kind !== 'local' && result.visibility !== inviteVisibility) {
         throw new AgentCommError('INVITE_INVALID', 'invite visibility does not match the relay channel')
       }

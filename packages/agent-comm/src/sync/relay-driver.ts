@@ -7,6 +7,7 @@ import {
   PostCardRespSchema,
   PostCreateChannelRespSchema,
   PostInvitesRespSchema,
+  PostJoinPublicRespSchema,
   PostJoinRespSchema,
   PostMessagesRespSchema,
   WIRE_HEADERS,
@@ -164,6 +165,30 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       }
       const resp = await call('POST', wireRoutes.postJoin, body, PostJoinRespSchema)
       // wire 的 PostJoinRespSchema 不携带 scope 字段(契约问题,见最终汇报);此处恒为 undefined。
+      return {
+        channel: resp.channel,
+        mode: resp.mode,
+        visibility: resp.visibility,
+        members: resp.members,
+        scope: undefined,
+      }
+    },
+
+    async joinPublic(joinInput) {
+      const body = {
+        alias: joinInput.member.alias,
+        node: {
+          nodeId: joinInput.member.nodeId,
+          publicKey: joinInput.member.publicKey ?? identity.publicKey,
+        },
+        card: joinInput.member.card,
+      }
+      const resp = await call(
+        'POST',
+        wireRoutes.postJoinPublic(joinInput.channel),
+        body,
+        PostJoinPublicRespSchema,
+      )
       return {
         channel: resp.channel,
         mode: resp.mode,

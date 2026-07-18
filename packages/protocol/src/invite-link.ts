@@ -8,6 +8,8 @@ import { AgentCommError } from './errors.js'
  *   同机文件即边界,无 e2eKey;不出网。
  * - pluggable transport:`agentcomm-transport:?home=<encoded nats/slim URL>&t=<token>#k=<e2eKey>`
  *   非浏览器邀请，交给已注册的 TransportBindingFactory。
+ * - public channel:`https://<relay>/public/<channel>`
+ *   页面 URL 即公开发现入口；没有 secret，加入时仍需签名并由宿主确认频道信任。
  */
 
 export type ParsedInvite =
@@ -20,6 +22,7 @@ export type ParsedInvite =
     }
   | { kind: 'local'; hubPath: string; joinToken: string }
   | { kind: 'transport'; home: string; joinToken: string; e2eKey?: string }
+  | { kind: 'public'; relayUrl: string; channel: string }
 
 export const LOCAL_SCHEME = 'agentcomm-local:'
 export const TRANSPORT_SCHEME = 'agentcomm-transport:'
@@ -57,6 +60,11 @@ export function formatRelayInviteLink(
   if (visibility === 'public') fragment.set('v', 'public')
   const frag = fragment.size > 0 ? `#${fragment.toString()}` : ''
   return `${base}/j/${joinToken}${frag}`
+}
+
+export function formatPublicChannelLink(relayUrl: string, channel: string): string {
+  const base = trimTrailingSlashes(relayUrl)
+  return `${base}/public/${encodeURIComponent(channel)}`
 }
 
 export function formatLocalInviteLink(hubPath: string, joinToken: string): string {
@@ -100,6 +108,19 @@ export function parseInviteLink(link: string): ParsedInvite {
   }
   if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
     const u = new URL(trimmed)
+    const publicPrefix = '/public/'
+    if (u.pathname.startsWith(publicPrefix)) {
+      let channel = ''
+      try {
+        channel = decodeURIComponent(u.pathname.slice(publicPrefix.length))
+      } catch {
+        throw new AgentCommError('INVITE_INVALID', 'public channel URL has invalid encoding')
+      }
+      if (!isUrlSafeToken(channel)) {
+        throw new AgentCommError('INVITE_INVALID', 'public channel link must be <relay>/public/<channel>')
+      }
+      return { kind: 'public', relayUrl: `${u.protocol}//${u.host}`, channel }
+    }
     const prefix = '/j/'
     const joinToken = u.pathname.startsWith(prefix) ? u.pathname.slice(prefix.length) : ''
     if (!isUrlSafeToken(joinToken)) {

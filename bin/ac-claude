@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TARGET="${AGENT_COMM_RELAY_TARGET:-prod}"
+
+case "$TARGET" in
+  prod | production)
+    TARGET_LABEL="prod"
+    RELAY_URL="${AGENT_COMM_PROD_RELAY_URL:-https://connect.meee1.com}"
+    ;;
+  dev | development | local)
+    TARGET_LABEL="dev"
+    RELAY_URL="${AGENT_COMM_DEV_RELAY_URL:-http://127.0.0.1:8787}"
+    ;;
+  http://* | https://*)
+    TARGET_LABEL="custom"
+    RELAY_URL="$TARGET"
+    ;;
+  *)
+    printf 'AgentComm: invalid relay target %q (use prod, dev, or an http(s) URL)\n' "$TARGET" >&2
+    exit 2
+    ;;
+esac
+
+if [[ -n "${AGENT_COMM_RELAY_URL:-}" ]]; then
+  TARGET_LABEL="custom"
+  RELAY_URL="$AGENT_COMM_RELAY_URL"
+fi
+
+print_config() {
+  printf 'Claude profile: %s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  printf 'AgentComm plugin: local source (%s)\n' "$ROOT"
+  printf 'AgentComm relay: %s (%s)\n' "$TARGET_LABEL" "$RELAY_URL"
+  printf 'AgentComm state: %s\n' "${AGENT_COMM_ROOT:-$HOME/.agent-comm}"
+}
+
+if [[ "${1:-}" == "--print-config" ]]; then
+  print_config
+  exit 0
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  printf 'AgentComm: claude command not found\n' >&2
+  exit 127
+fi
+
+print_config >&2
+
+export CLAUDE_PLUGIN_ROOT="$ROOT"
+export AGENT_COMM_DEV_SOURCE=1
+export AGENT_COMM_RELAY_URL="$RELAY_URL"
+
+exec claude --plugin-dir "$ROOT" "$@" \
+  --dangerously-load-development-channels server:agent-comm

@@ -42,7 +42,14 @@ describe('relay: 人类引导页', () => {
     expect(html).toContain('Считайте URL приглашения непрозрачными')
     expect(html).toContain('First check whether the AgentComm integration is available')
     expect(html).toContain('首先检查当前 Claude Code 会话中是否可用 AgentComm integration')
-    expect(html).toContain('ask exactly one yes/no question authorizing that plugin installation')
+    expect(html).toContain('host permission UI, not a duplicate yes/no question in chat')
+    expect(html).toContain('Auto hard-blocks persistent plugin installation')
+    expect(html).toContain('Shift+Tab to switch to Manual')
+    expect(html).toContain('Auto 会硬阻止持久插件安装')
+    expect(html).not.toContain('ask exactly one yes/no question authorizing that plugin installation')
+    expect(html).toContain(
+      "zsh -lic 'claude plugin marketplace add tianqixinxi/agent-conn && claude plugin install agent-comm@agent-comm'",
+    )
     expect(html).toContain('separate security decisions')
     expect(html).not.toContain('fetch(')
     expect(html).not.toContain('npx agent-comm join')

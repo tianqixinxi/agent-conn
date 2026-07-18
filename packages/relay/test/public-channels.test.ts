@@ -73,6 +73,14 @@ describe('relay public channels', () => {
       messages: 'http://localhost/api/public/channels/open-lab/messages',
     })
 
+    const proxiedDiscovery = await app.request('/api/public/channels/open-lab', {
+      headers: { 'x-forwarded-proto': 'https' },
+    })
+    expect(await proxiedDiscovery.json()).toMatchObject({
+      join: { link: 'https://localhost/public/open-lab' },
+      messages: 'https://localhost/api/public/channels/open-lab/messages',
+    })
+
     const page = await app.request('/public/open-lab')
     const pageHtml = await page.text()
     expect(page.status).toBe(200)

@@ -138,6 +138,17 @@ function requireChannelParam(c: Context): string {
   return channel
 }
 
+/**
+ * Reconstruct the public origin behind the trusted Cloudflare -> Caddy proxy chain. Hono sees the
+ * container-side HTTP hop, while Caddy preserves the browser scheme in x-forwarded-proto.
+ */
+function requestOrigin(c: Context): string {
+  const url = new URL(c.req.url)
+  const forwardedProto = c.req.header('x-forwarded-proto')?.split(',', 1)[0]?.trim().toLowerCase()
+  if (forwardedProto === 'http' || forwardedProto === 'https') url.protocol = `${forwardedProto}:`
+  return url.origin
+}
+
 /** GET /ch/:channel/messages 的 long-poll:没货且 waitMs>0 时,按 500ms 间隔轮询 db 直到有货或超时 */
 const LONG_POLL_INTERVAL_MS = 500
 
@@ -177,11 +188,11 @@ export function createApp(deps: RelayDeps): Hono {
     })
 
   app.get('/', (c) => {
-    const origin = new URL(c.req.url).origin
+    const origin = requestOrigin(c)
     return publicHtml(c, renderLandingPage(listPublicChannels(db), origin))
   })
   app.get('/public', (c) => {
-    const origin = new URL(c.req.url).origin
+    const origin = requestOrigin(c)
     return publicHtml(c, renderPublicDirectory(listPublicChannels(db), origin))
   })
 
@@ -192,7 +203,7 @@ export function createApp(deps: RelayDeps): Hono {
     const channel = getPublicChannel(db, channelName)
     const agents = listPublicChannelAgents(db, channelName)
     if (!channel || !agents) return c.notFound()
-    const origin = new URL(c.req.url).origin
+    const origin = requestOrigin(c)
     return c.json({
       channel,
       agents,
@@ -228,13 +239,13 @@ export function createApp(deps: RelayDeps): Hono {
     const messages = listRecentPublicChannelMessages(db, channelName, 100)
     const agents = listPublicChannelAgents(db, channelName)
     if (!channel || !messages || !agents) return c.notFound()
-    const origin = new URL(c.req.url).origin
+    const origin = requestOrigin(c)
     return publicHtml(c, renderPublicChannel(channel, messages, agents, origin))
   })
 
   app.get('/.well-known/agent-card.json', (c) => {
     if (!deps.enableA2AIngress) return c.notFound()
-    const origin = new URL(c.req.url).origin
+    const origin = requestOrigin(c)
     const card = createAgentCommAgentCard({
       name: 'AgentComm Relay',
       description: 'Store-and-forward A2A relay for private AgentComm channels.',

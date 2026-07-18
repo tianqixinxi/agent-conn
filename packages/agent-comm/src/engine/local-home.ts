@@ -135,6 +135,58 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
       })
     },
 
+    async joinPublic(input) {
+      return hub.withTx(() => {
+        const chRow = hub.channels.get(input.channel)
+        if (chRow?.visibility !== 'public') {
+          throw new AgentCommError('CHANNEL_NOT_FOUND', `public channel not found: ${input.channel}`)
+        }
+        const existingByNode = hub.members.getByNode(input.channel, input.member.nodeId)
+        if (existingByNode) {
+          hub.members.updateCardAndKey(
+            input.channel,
+            existingByNode.alias,
+            input.member.publicKey ?? existingByNode.publicKey,
+            input.member.card ?? existingByNode.card,
+          )
+          return {
+            channel: input.channel,
+            mode: chRow.mode,
+            visibility: chRow.visibility,
+            members: hub.members.list(input.channel).map(toMemberOut),
+            scope: existingByNode.scope,
+          }
+        }
+        if (hub.members.get(input.channel, input.member.alias)) {
+          throw new AgentCommError('ALIAS_TAKEN', `alias already in use in channel: ${input.member.alias}`)
+        }
+        const joinedAt = nowIso()
+        hub.members.insert({
+          channel: input.channel,
+          alias: input.member.alias,
+          nodeId: input.member.nodeId,
+          publicKey: input.member.publicKey,
+          scope: undefined,
+          card: input.member.card,
+          joinedAt,
+        })
+        hub.audit.append({
+          ts: joinedAt,
+          event: 'connected',
+          channel: input.channel,
+          fromAlias: input.member.alias,
+          actor: `agent:${input.member.alias}`,
+        })
+        return {
+          channel: input.channel,
+          mode: chRow.mode,
+          visibility: chRow.visibility,
+          members: hub.members.list(input.channel).map(toMemberOut),
+          scope: undefined,
+        }
+      })
+    },
+
     async leave(input) {
       return hub.withTx(() => {
         hub.members.delete(input.channel, input.alias)

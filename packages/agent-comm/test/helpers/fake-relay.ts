@@ -8,6 +8,7 @@ import {
   PostCardReqSchema,
   PostCreateChannelReqSchema,
   PostInvitesReqSchema,
+  PostJoinPublicReqSchema,
   PostJoinReqSchema,
   PostMessagesReqSchema,
 } from '@agent-comm/protocol'
@@ -158,6 +159,38 @@ export function createFakeRelay(nodes: FakeRelayNode[]): Promise<FakeRelay> {
         const ch = channels.get(channelName)
         if (!ch) {
           jsonSend(res, 404, { error: { code: 'CHANNEL_NOT_FOUND', message: 'channel missing' } })
+          return
+        }
+        const alreadyMember = ch.members.some((m) => m.nodeId === parsed.data.node.nodeId)
+        if (!alreadyMember) {
+          ch.members.push({
+            alias: parsed.data.alias,
+            nodeId: parsed.data.node.nodeId,
+            publicKey: parsed.data.node.publicKey,
+            card: parsed.data.card,
+          })
+        }
+        jsonSend(res, 200, {
+          channel: channelName,
+          mode: ch.mode,
+          visibility: ch.visibility,
+          myAlias: parsed.data.alias,
+          members: ch.members.map((m) => ({ alias: m.alias, nodeId: m.nodeId, card: m.card })),
+        })
+        return
+      }
+
+      const publicJoinMatch = pathname.match(/^\/ch\/([^/]+)\/public-join$/)
+      if (req.method === 'POST' && publicJoinMatch) {
+        const parsed = PostJoinPublicReqSchema.safeParse(rawJson)
+        if (!parsed.success) {
+          jsonSend(res, 400, { error: { code: 'INVALID_INPUT', message: parsed.error.message } })
+          return
+        }
+        const channelName = publicJoinMatch[1] ?? ''
+        const ch = channels.get(channelName)
+        if (ch?.visibility !== 'public') {
+          jsonSend(res, 404, { error: { code: 'CHANNEL_NOT_FOUND', message: 'public channel missing' } })
           return
         }
         const alreadyMember = ch.members.some((m) => m.nodeId === parsed.data.node.nodeId)

@@ -22,7 +22,7 @@ import { createA2AChannelAdapter } from '../a2a/channel-adapter.js'
 import { DEFAULT_INBOX_CAP, type ProfilePaths } from '../config.js'
 import type { Actor, Engine } from '../engine/api.js'
 
-const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.4.3' } as const
+const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.5.0' } as const
 const DEFAULT_POLL_MS = 1_000
 const MAX_PENDING_EVENTS = DEFAULT_INBOX_CAP
 export const DEFAULT_CHANNEL_RELAY_URL = 'https://connect.meee1.com'
@@ -152,7 +152,7 @@ Use the single agent_comm tool only for high-level communication:
 - delegate: ask a connected peer to perform an outcome; do not expose transport fields to the user.
 - request_input: suspend a delegated task with A2A INPUT_REQUIRED when information is missing.
 - request_approval: suspend a delegated task with A2A AUTH_REQUIRED when user authorization is required.
-- connect: redeem an invitation only after the user explicitly chose to join it.
+- connect: join from an invitation or public channel URL only after the user explicitly chose to join it.
 - resolve_approval: approve/reject a held message only after an explicit user decision.
 
 Do not ask the user to manage profiles, cursors, acknowledgements, message IDs, or polling.

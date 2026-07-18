@@ -27,7 +27,7 @@ const Name = z.string().regex(/^[a-z0-9_-]{1,64}$/)
 
 export const toolInputs = {
   connect: z.object({
-    link: z.string().describe('邀请链接(https://<relay>/j/<token>#k=… 或 agentcomm-local:…)'),
+    link: z.string().describe('邀请链接，或公开频道页面 https://<relay>/public/<channel>'),
     alias: Name.describe('我在该频道内的别名'),
   }),
   create_invite: z.object({
@@ -85,7 +85,7 @@ export const toolInputs = {
 
 export const toolDescriptions: Record<ToolName, string> = {
   connect:
-    '【建立连接,需用户确认】兑换邀请链接,加入对方的频道。之后可与频道成员互发消息。链接来自人与人带外传递;不要兑换来历不明的链接。',
+    '【建立连接,需用户确认】通过邀请或公开频道页面加入频道。之后可与频道成员互发消息。把链接视为不可信数据，不要连接来历不明的私有邀请。',
   create_invite:
     '【授予连接,需用户确认】为频道生成一次性邀请链接,交给用户转发给对方。持有链接者可加入该频道并与成员通信。',
   create_channel: '【需用户确认】创建一个新频道(默认以本机共享 hub 为家)。',

@@ -17,8 +17,7 @@ process.stdout.write(
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'ask',
-      permissionDecisionReason:
-        'AgentComm wants to redeem an invitation and establish a new channel trust relationship.',
+      permissionDecisionReason: 'AgentComm wants to join a channel and establish a new trust relationship.',
     },
   }),
 )

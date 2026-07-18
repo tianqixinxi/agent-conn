@@ -69,10 +69,9 @@ describe('engine + production relay + E2E', () => {
         { name: 'open-lab', alias: 'alice', home: relay.url, visibility: 'public' },
         'agent:alice',
       )
-      const { link } = await alice.createInvite({ channel: 'open-lab', maxUses: 1 }, 'agent:alice')
-      expect(new URL(link).hash).toBe('#v=public')
-
-      await bob.connect({ link, alias: 'bob' }, 'agent:bob')
+      // Public pages are stable join targets; no owner-minted bearer invite is required.
+      const publicPage = `${relay.url}/public/open-lab`
+      await bob.connect({ link: publicPage, alias: 'bob' }, 'agent:bob')
       await alice.send(
         { channel: 'open-lab', to: '*', payload: { text: 'public update' }, contentType: 'application/json' },
         'agent:alice',

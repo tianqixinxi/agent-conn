@@ -199,6 +199,13 @@ export interface PublicChannelMessage {
   ts: string
 }
 
+export interface PublicChannelAgent {
+  alias: string
+  online: boolean
+  lastSeenAt: string
+  card?: AgentCard | undefined
+}
+
 function publicSummaryFromRow(row: {
   name: string
   display_name: string | null
@@ -245,6 +252,16 @@ export function getPublicChannel(db: RelayDb, channel: string): PublicChannelSum
     .prepare(`${PUBLIC_SUMMARY_SELECT} WHERE c.visibility = 'public' AND c.name = ?`)
     .get(channel) as Parameters<typeof publicSummaryFromRow>[0] | undefined
   return row ? publicSummaryFromRow(row) : undefined
+}
+
+export function listPublicChannelAgents(db: RelayDb, channel: string): PublicChannelAgent[] | undefined {
+  if (!getPublicChannel(db, channel)) return undefined
+  return listMembers(db, channel).map((member) => ({
+    alias: member.alias,
+    online: Date.now() - Date.parse(member.last_seen_at) <= PRESENCE_LEASE_MS,
+    lastSeenAt: member.last_seen_at,
+    ...(member.card_json ? { card: JSON.parse(member.card_json) as AgentCard } : {}),
+  }))
 }
 
 export function listPublicChannelMessages(
@@ -511,6 +528,76 @@ export function joinViaInvite(
     throw e
   }
   return buildJoinLikeResult(db, channel, args.alias, chRow.mode)
+}
+
+// ———————————————————————————————————————————— POST /ch/:channel/public-join
+
+/**
+ * Public channel pages are stable discovery links, not bearer capabilities. A new node still proves
+ * possession of its signing key at the HTTP layer; this function only applies membership semantics.
+ */
+export function joinPublicChannel(
+  db: RelayDb,
+  args: { channel: string; alias: string; nodeId: string; publicKey: string; card?: AgentCard },
+): JoinLikeResult {
+  const chRow = getChannelRow(db, args.channel)
+  if (chRow?.visibility !== 'public') {
+    // Do not turn this endpoint into a private-channel existence oracle.
+    throw new AgentCommError('CHANNEL_NOT_FOUND', `public channel not found: ${args.channel}`)
+  }
+
+  const existingByAlias = db.raw
+    .prepare('SELECT * FROM members WHERE channel = ? AND alias = ?')
+    .get(args.channel, args.alias) as MemberRow | undefined
+  if (existingByAlias) {
+    if (existingByAlias.node_id !== args.nodeId) {
+      throw new AgentCommError('ALIAS_TAKEN', `alias already taken in channel: ${args.alias}`)
+    }
+    db.raw
+      .prepare('UPDATE members SET last_seen_at = ? WHERE channel = ? AND node_id = ?')
+      .run(nowIso(), args.channel, args.nodeId)
+    return buildJoinLikeResult(db, args.channel, args.alias, chRow.mode)
+  }
+
+  const existingByNode = getMemberByChannelNode(db, args.channel, args.nodeId)
+  if (existingByNode) {
+    throw new AgentCommError(
+      'CONFLICT',
+      `node already joined channel ${args.channel} as alias '${existingByNode.alias}'`,
+    )
+  }
+
+  const joinedAt = nowIso()
+  db.raw.exec('BEGIN')
+  try {
+    db.raw
+      .prepare(
+        `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, last_seen_at, join_seq)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      )
+      .run(
+        args.channel,
+        args.alias,
+        args.nodeId,
+        args.publicKey,
+        args.card ? JSON.stringify(args.card) : null,
+        joinedAt,
+        joinedAt,
+        chRow.head_seq,
+      )
+    insertAudit(db, {
+      event: 'connected',
+      channel: args.channel,
+      fromAlias: args.alias,
+      actor: `agent:${args.alias}`,
+      detail: 'joined from public channel page',
+    })
+    db.raw.exec('COMMIT')
+  } catch (error) {
+    db.raw.exec('ROLLBACK')
+    throw error
+  }
+  return buildJoinLikeResult(db, args.channel, args.alias, chRow.mode)
 }
 
 // ———————————————————————————————————————————— POST /ch/:channel/invites

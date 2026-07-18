@@ -1,6 +1,6 @@
 {
   "name": "agent-comm",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Event-driven agent channels for Claude Code with E2E private channels, readable public channels, and approval gates.",
   "author": {
     "name": "AgentComm contributors"

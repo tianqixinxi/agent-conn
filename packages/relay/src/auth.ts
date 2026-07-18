@@ -57,14 +57,14 @@ function isPublicRoute(method: string, pathname: string): boolean {
 }
 
 /**
- * POST /join 与 POST /ch/:channel/create(relay 自定 bootstrap 端点,见 app.ts 顶部注释)
- * 允许"调用者还不是任何频道的成员"——这两个端点都在请求体里带 `node: {nodeId, publicKey}`,
+ * POST /join、POST /ch/:channel/create 与 public-join
+ * 允许"调用者还不是任何频道的成员"——这些端点都在请求体里带 `node: {nodeId, publicKey}`,
  * 找不到已注册公钥时退化为用 body 里的公钥验签(TOFU,首次注册即绑定,wire.ts 对 /join 的原话)。
  */
 function isBootstrapExemptRoute(method: string, pathname: string): boolean {
   if (method !== 'POST') return false
   if (pathname === '/join') return true
-  return /^\/ch\/[^/]+\/create$/.test(pathname)
+  return /^\/ch\/[^/]+\/create$/.test(pathname) || /^\/ch\/[^/]+\/public-join$/.test(pathname)
 }
 
 export function createAuthMiddleware(db: RelayDb): MiddlewareHandler {

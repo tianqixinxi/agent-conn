@@ -1,5 +1,6 @@
 import {
   formatLocalInviteLink,
+  formatPublicChannelLink,
   formatRelayInviteLink,
   formatTransportInviteLink,
   isValidName,
@@ -37,6 +38,16 @@ describe('invite links', () => {
     })
   })
 
+  it('uses a public channel page itself as a stable join target', () => {
+    const link = formatPublicChannelLink('https://relay.example.com/', 'open-lab')
+    expect(link).toBe('https://relay.example.com/public/open-lab')
+    expect(parseInviteLink(link)).toEqual({
+      kind: 'public',
+      relayUrl: 'https://relay.example.com',
+      channel: 'open-lab',
+    })
+  })
+
   it('round-trips local link', () => {
     const link = formatLocalInviteLink('/Users/x/.agent-comm/local-hub.db', 't0k')
     const p = parseInviteLink(link)
@@ -57,6 +68,7 @@ describe('invite links', () => {
     expect(() => parseInviteLink('ftp://nope')).toThrow()
     expect(() => parseInviteLink('https://relay.example.com/join/abc')).toThrow()
     expect(() => parseInviteLink('https://relay.example.com/j/a/b')).toThrow()
+    expect(() => parseInviteLink('https://relay.example.com/public/a/b')).toThrow()
     expect(() => parseInviteLink('https://relay.example.com/j/token#v=secret')).toThrow()
   })
 })

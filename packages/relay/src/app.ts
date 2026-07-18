@@ -24,6 +24,8 @@ import {
   PostCreateChannelRespSchema,
   PostInvitesReqSchema,
   PostInvitesRespSchema,
+  PostJoinPublicReqSchema,
+  PostJoinPublicRespSchema,
   PostJoinReqSchema,
   PostJoinRespSchema,
   PostMessagesReqSchema,
@@ -43,8 +45,10 @@ import {
   createChannelBootstrap,
   createInvite,
   getPublicChannel,
+  joinPublicChannel,
   joinViaInvite,
   listMembers,
+  listPublicChannelAgents,
   listPublicChannelMessages,
   listPublicChannels,
   listRecentPublicChannelMessages,
@@ -167,15 +171,38 @@ export function createApp(deps: RelayDeps): Hono {
     c.body(html, 200, {
       'content-type': 'text/html; charset=UTF-8',
       'content-security-policy':
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
     })
 
-  app.get('/', (c) => publicHtml(c, renderLandingPage(listPublicChannels(db))))
-  app.get('/public', (c) => publicHtml(c, renderPublicDirectory(listPublicChannels(db))))
+  app.get('/', (c) => {
+    const origin = new URL(c.req.url).origin
+    return publicHtml(c, renderLandingPage(listPublicChannels(db), origin))
+  })
+  app.get('/public', (c) => {
+    const origin = new URL(c.req.url).origin
+    return publicHtml(c, renderPublicDirectory(listPublicChannels(db), origin))
+  })
 
   app.get('/api/public/channels', (c) => c.json({ channels: listPublicChannels(db) }))
+  app.get('/api/public/channels/:channel', (c) => {
+    const channelName = c.req.param('channel')
+    if (!channelName) return c.notFound()
+    const channel = getPublicChannel(db, channelName)
+    const agents = listPublicChannelAgents(db, channelName)
+    if (!channel || !agents) return c.notFound()
+    const origin = new URL(c.req.url).origin
+    return c.json({
+      channel,
+      agents,
+      join: {
+        operation: 'connect',
+        link: `${origin}/public/${encodeURIComponent(channel.name)}`,
+      },
+      messages: `${origin}/api/public/channels/${encodeURIComponent(channel.name)}/messages`,
+    })
+  })
   app.get(
     '/api/public/channels/:channel/messages',
     withErrors(async (c) => {
@@ -199,8 +226,10 @@ export function createApp(deps: RelayDeps): Hono {
     if (!channelName) return c.notFound()
     const channel = getPublicChannel(db, channelName)
     const messages = listRecentPublicChannelMessages(db, channelName, 100)
-    if (!channel || !messages) return c.notFound()
-    return publicHtml(c, renderPublicChannel(channel, messages))
+    const agents = listPublicChannelAgents(db, channelName)
+    if (!channel || !messages || !agents) return c.notFound()
+    const origin = new URL(c.req.url).origin
+    return publicHtml(c, renderPublicChannel(channel, messages, agents, origin))
   })
 
   app.get('/.well-known/agent-card.json', (c) => {
@@ -327,6 +356,28 @@ export function createApp(deps: RelayDeps): Hono {
         card: parsed.data.card,
       })
       return c.json(PostJoinRespSchema.parse(result))
+    }),
+  )
+
+  app.post(
+    '/ch/:channel/public-join',
+    withErrors(async (c) => {
+      const channel = requireChannelParam(c)
+      const headerNodeId = requireHeaderNode(c)
+      const body = await readJson(c)
+      const parsed = PostJoinPublicReqSchema.safeParse(body)
+      if (!parsed.success) throw new AgentCommError('INVALID_INPUT', parsed.error.message)
+      if (parsed.data.node.nodeId !== headerNodeId) {
+        throw new AgentCommError('AUTH_FAILED', 'x-agentcomm-node header 与 body.node.nodeId 不一致')
+      }
+      const result = joinPublicChannel(db, {
+        channel,
+        alias: parsed.data.alias,
+        nodeId: parsed.data.node.nodeId,
+        publicKey: parsed.data.node.publicKey,
+        card: parsed.data.card,
+      })
+      return c.json(PostJoinPublicRespSchema.parse(result))
     }),
   )
 

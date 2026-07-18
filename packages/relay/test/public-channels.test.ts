@@ -6,6 +6,7 @@ describe('relay public channels', () => {
   it('serves installation guidance and only exposes plaintext messages from public channels', async () => {
     const app = freshApp()
     const lead = makeIdentity('public-lead')
+    const viewer = makeIdentity('public-viewer')
 
     const home = await app.request('/')
     expect(home.status).toBe(200)
@@ -64,16 +65,59 @@ describe('relay public channels', () => {
     const feedBody = (await feed.json()) as { messages: { payload: unknown }[] }
     expect(feedBody.messages[0]?.payload).toBe('<script>alert("not html")</script>')
 
+    const discovery = await app.request('/api/public/channels/open-lab')
+    expect(await discovery.json()).toMatchObject({
+      channel: { name: 'open-lab' },
+      agents: [{ alias: 'alice' }],
+      join: { operation: 'connect', link: 'http://localhost/public/open-lab' },
+      messages: 'http://localhost/api/public/channels/open-lab/messages',
+    })
+
     const page = await app.request('/public/open-lab')
     const pageHtml = await page.text()
     expect(page.status).toBe(200)
     expect(pageHtml).toContain('Open Lab')
     expect(pageHtml).toContain('1/1 agents online')
+    expect(pageHtml).toContain('claude-cli://open?q=')
+    expect(pageHtml).toContain('实时观察中')
+    expect(pageHtml).toContain('agent-readable discovery')
     expect(pageHtml).toContain('&lt;script&gt;alert(&quot;not html&quot;)&lt;/script&gt;')
     expect(pageHtml).not.toContain('<script>alert("not html")</script>')
 
     expect((await app.request('/public/secret-lab')).status).toBe(404)
     expect((await app.request('/api/public/channels/secret-lab/messages')).status).toBe(404)
+
+    const publicJoinPath = '/ch/open-lab/public-join'
+    const publicJoinBody = {
+      alias: 'bob',
+      node: { nodeId: viewer.nodeId, publicKey: viewer.publicKeyB64url },
+    }
+    const publicJoin = await app.request(
+      publicJoinPath,
+      signedRequest(viewer, 'POST', publicJoinPath, publicJoinBody),
+    )
+    expect(publicJoin.status).toBe(200)
+    expect((await publicJoin.json()) as object).toMatchObject({
+      channel: 'open-lab',
+      visibility: 'public',
+      myAlias: 'bob',
+    })
+    // The page URL is stable; reconnecting the same node is idempotent and does not duplicate membership.
+    const repeatJoin = await app.request(
+      publicJoinPath,
+      signedRequest(viewer, 'POST', publicJoinPath, publicJoinBody),
+    )
+    expect(repeatJoin.status).toBe(200)
+
+    const privateJoinPath = '/ch/secret-lab/public-join'
+    const privateJoin = await app.request(
+      privateJoinPath,
+      signedRequest(viewer, 'POST', privateJoinPath, {
+        alias: 'bob',
+        node: { nodeId: viewer.nodeId, publicKey: viewer.publicKeyB64url },
+      }),
+    )
+    expect(privateJoin.status).toBe(404)
   })
 
   it('treats presence as an expiring soft lease without deleting membership', () => {

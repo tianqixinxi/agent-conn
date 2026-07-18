@@ -45,6 +45,24 @@ export interface TransportBinding {
     scope?: InviteScope | undefined
   }>
 
+  /** Join a discoverable public channel without a bearer invite token. */
+  joinPublic(input: {
+    channel: string
+    member: { alias: string; nodeId: string; publicKey?: string | undefined; card?: AgentCard | undefined }
+  }): Promise<{
+    channel: string
+    mode: ChannelMode
+    visibility: ChannelVisibility
+    members: {
+      alias: string
+      nodeId: string
+      card?: AgentCard | undefined
+      lastSeenAt?: string | undefined
+      online?: boolean | undefined
+    }[]
+    scope?: InviteScope | undefined
+  }>
+
   leave(input: { channel: string; alias: string; nodeId: string }): Promise<void>
 
   mintInvite(input: {

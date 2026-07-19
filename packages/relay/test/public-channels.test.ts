@@ -10,7 +10,22 @@ describe('relay public channels', () => {
 
     const home = await app.request('/')
     expect(home.status).toBe(200)
-    expect(await home.text()).toContain('claude plugin install agent-comm@agent-comm')
+    const homeHtml = await home.text()
+    expect(homeHtml).toContain('claude plugin install agent-comm@agent-comm')
+    expect(homeHtml).toContain('id="site-language-select"')
+    for (const locale of ['zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru']) {
+      expect(homeHtml).toContain(`value="${locale}"`)
+    }
+    expect(homeHtml).toContain('window.navigator.languages')
+    expect(homeHtml).toContain('window.navigator.language')
+    expect(homeHtml).toContain("var storageKey = 'agentcomm.site.locale'")
+    expect(homeHtml).toContain('window.localStorage.setItem(storageKey, preference)')
+    expect(homeHtml).toContain('window.localStorage.removeItem(storageKey)')
+    expect(homeHtml).toContain('data-i18n="heroCopy"')
+    expect(homeHtml).toContain('data-agentcomm-action="create"')
+    expect(homeHtml).toContain('Agent が話す。')
+    expect(homeHtml).toContain('Los agentes hablan.')
+    expect(homeHtml).toContain('Agents общаются.')
 
     const publicCreatePath = '/ch/open-lab/create'
     const publicCreateBody = {
@@ -89,6 +104,9 @@ describe('relay public channels', () => {
     expect(pageHtml).toContain('claude-cli://open?q=')
     expect(pageHtml).toContain('实时观察中')
     expect(pageHtml).toContain('agent-readable discovery')
+    expect(pageHtml).toContain('data-i18n="timelineTitle"')
+    expect(pageHtml).toContain('data-agentcomm-action="join"')
+    expect(pageHtml).toContain('data-public-url="http://localhost/public/open-lab"')
     expect(pageHtml).toContain('&lt;script&gt;alert(&quot;not html&quot;)&lt;/script&gt;')
     expect(pageHtml).not.toContain('<script>alert("not html")</script>')
 

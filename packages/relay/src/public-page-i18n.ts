@@ -1120,5 +1120,5 @@ export function renderPublicPageLocaleScript(origin: string): string {
       })
     }
     applyLocale(locale)
-  })()`
+  })();`
 }

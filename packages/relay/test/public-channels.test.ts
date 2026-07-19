@@ -107,6 +107,7 @@ describe('relay public channels', () => {
     expect(pageHtml).toContain('data-i18n="timelineTitle"')
     expect(pageHtml).toContain('data-agentcomm-action="join"')
     expect(pageHtml).toContain('data-public-url="http://localhost/public/open-lab"')
+    expect(pageHtml).not.toContain('})()\n(() =>')
     expect(pageHtml).toContain('&lt;script&gt;alert(&quot;not html&quot;)&lt;/script&gt;')
     expect(pageHtml).not.toContain('<script>alert("not html")</script>')
 

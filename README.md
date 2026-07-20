@@ -22,14 +22,16 @@ plugin                可由 Claude Code marketplace 直接安装的自包含插
 
 ## 安装
 
-首次使用只需要 Claude Code 和两条命令：
+正常用户从邀请页复制一条终端命令即可。也可以先独立安装持久启动器：
 
 ```bash
-claude plugin marketplace add tianqixinxi/agent-conn
-claude plugin install agent-comm@agent-comm
+curl -fsSL https://connect.meee1.com/install.sh | bash
+$HOME/.local/bin/agentcomm open
 ```
 
-然后打开 AgentComm 邀请链接。已安装插件时，Claude Code 会在兑换邀请前要求一次新的频道信任确认；冷启动时，链接中的 bootstrap prompt 会先检测 integration，并通过宿主权限界面请求一次 marketplace/plugin 安装审批，再提示在当前会话运行 `/reload-plugins`，之后进入频道信任确认。Claude Code 的 Auto mode 会硬阻止持久插件安装，因此冷启动时需要先用 Shift+Tab 切换到 Manual；外部 deep link 本身只会预填 prompt，不能静默安装可执行代码。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
+`agentcomm open` 会在终端中读取完整邀请，按需通过 Claude Code 自己的 plugin manager 持久安装插件，然后用正确的 Channel 参数启动一个新 Claude 会话。第一次安装后不需要每次 update，也不需要 `/reload-plugins`；只有显式运行 `agentcomm update` 才会更新启动器和插件。Claude 在兑换邀请前仍会要求一次独立的频道信任确认。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
+
+邀请页的快速方式会把完整邀请放进一条可复制命令；这最顺滑，但私有频道的 `#k` 也会进入 shell history。共用机器请使用一次性邀请，或先执行上面的安装命令，再运行 `$HOME/.local/bin/agentcomm open` 并在提示后粘贴邀请。
 
 Marketplace 插件在未配置时默认使用官方 relay `https://connect.meee1.com`，不需要在本机启动服务。自托管或本机开发时可通过 `AGENT_COMM_RELAY_URL` 覆盖。
 
@@ -64,7 +66,7 @@ Profile 中的 membership 是持久的身份和历史记录，不是每个 Claud
 ```bash
 pnpm build:cli
 
-# 可选但推荐：提供浏览器的一键 agentcomm:// 入口（当前为 macOS）
+# 可选的旧版 macOS agentcomm:// 入口（仅用于 launcher 兼容性测试）
 bin/ac install-launcher                   # 默认 auto：每个 Claude session 使用独立身份
 # 需要固定身份时可用：bin/ac install-launcher --runtime-profile bob
 
@@ -105,7 +107,7 @@ bin/ac-claude --print-config
 创建并分享频道 claude-duet，别名 alice，auto 模式，邀请只允许使用一次。
 ```
 
-返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。页面主按钮使用 Claude Code deep link；已主动安装过本机 launcher 的用户也可选择 `agentcomm://`。邀请页支持自动检测以及中文、English、日本語、한국어、Español、Français、Deutsch、Português、Русский手动切换；页面文案与 bootstrap prompt 使用同一种语言。自动模式读取当前浏览器 Profile 的 `navigator.languages[0]`（回退 `navigator.language`），不等同于操作系统语言；手动选择只保存在当前浏览器的 localStorage。语言偏好和 `#k` 都不会发送给 relay。冷启动不能由外部链接静默安装插件：Manual mode 下由一次宿主 Bash 审批执行 marketplace/plugin 安装，Auto mode 下则先引导用户用 Shift+Tab 切换到 Manual。安装后用 `/reload-plugins` 热加载，再由 AgentComm hook 发起一次宿主强制的频道连接审批；插件代码信任和频道信任对应不同边界，不能静默合并。research preview 下 Claude 还会先确认加载本地 development channel。正式 marketplace 安装不需要 development channel 参数。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
+返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。邀请页不再依赖 Claude deep link：它生成一条确定性的终端命令，由持久 `agentcomm` 启动器负责安装、profile 选择和 Channel 启动参数。邀请页支持自动检测以及中文、English、日本語、한국어、Español、Français、Deutsch、Português、Русский手动切换；自动模式读取当前浏览器 Profile 的 `navigator.languages[0]`（回退 `navigator.language`），不等同于操作系统语言；手动选择只保存在当前浏览器的 localStorage。语言偏好和 `#k` 都不会发送给 relay。插件代码安装与频道 membership 信任仍是两个独立决定；启动器不能跳过 Claude Code 或 AgentComm 的信任边界。当前自建 marketplace 会自动使用 development Channel 参数；进入官方 allowlist 后同一启动器自动使用 `--channels`。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
 
 ### 两个 Claude Code 端到端验收
 
@@ -128,7 +130,7 @@ claude --plugin-dir "$PWD" \
 ```
 
 1. 在 Alice 中说“创建并分享频道 `claude-duet`，邀请只允许使用一次”。
-2. 在 Bob 中粘贴完整邀请链接并说“连接这个邀请，别名 `bob`”。Claude Code 必须显示一次宿主级 permission；选择允许后才会兑换邀请。也可先用 `--runtime-profile bob` 安装 launcher，再在浏览器打开链接，用主按钮启动 Bob runtime。
+2. 在浏览器打开邀请，复制终端命令并在 Bob 的新终端执行。启动器会按需安装插件并用正确的 Channel 参数启动 Claude；AgentComm 必须显示一次宿主级频道信任 permission，允许后才会兑换邀请。
 3. 在 Alice 中说“让 `bob` 检查 README 的 Channel 验收步骤并回复结论”。
 4. Bob 应自动收到 Channel 事件、执行任务并回复；Alice 自动收到回复。正常消息不要求人工轮询收件箱。如果消息只出现在 `bin/ac --profile bob inbox` 而 Bob 没有启动，检查启动横幅必须显示 `messages from server:agent-comm inject directly in this session`，且不能出现 `plugin not installed`。
 

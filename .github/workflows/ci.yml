@@ -62,9 +62,15 @@ jobs:
           curl --fail --silent http://127.0.0.1:18787/ > /tmp/agent-comm-home.html
           curl --fail --silent http://127.0.0.1:18787/public > /tmp/agent-comm-public.html
           curl --fail --silent http://127.0.0.1:18787/api/public/channels > /tmp/agent-comm-public.json
-          grep --quiet 'claude plugin marketplace add tianqixinxi/agent-conn' /tmp/agent-comm-home.html
+          curl --fail --silent http://127.0.0.1:18787/install.sh > /tmp/agent-comm-install.sh
+          curl --fail --silent http://127.0.0.1:18787/bin/agentcomm > /tmp/agentcomm
+          grep --quiet 'install.sh | bash' /tmp/agent-comm-home.html
           grep --quiet '公开频道' /tmp/agent-comm-public.html
           grep --quiet '"channels"' /tmp/agent-comm-public.json
+          grep --quiet 'AGENTCOMM_BOOTSTRAP_VERSION' /tmp/agent-comm-install.sh
+          grep --quiet 'agentcomm open' /tmp/agentcomm
+          bash -n /tmp/agent-comm-install.sh
+          bash -n /tmp/agentcomm
 
   terraform:
     name: Terraform checks

@@ -35,6 +35,7 @@ import {
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { createAuthMiddleware, requireHeaderNode } from './auth.js'
+import { renderAgentCommLauncher, renderInstallerScript } from './bootstrap-scripts.js'
 import { errorStatus } from './http.js'
 import { renderJoinPage } from './join-page.js'
 import { renderLandingPage, renderPublicChannel, renderPublicDirectory } from './public-pages.js'
@@ -173,10 +174,22 @@ export function createApp(deps: RelayDeps): Hono {
   const db = openDb(deps.dbPath)
   const app = new Hono()
 
-  // 除 GET /j/:token、GET /healthz 外全部要求 WIRE_HEADERS 签名(auth.ts 内部判断路径豁免)
+  // 安装、邀请、健康检查与公开频道是发现面；其余路由要求 WIRE_HEADERS 签名。
   app.use('*', createAuthMiddleware(db))
 
   app.get('/healthz', (c) => c.json({ ok: true }))
+
+  const shellScript = (c: Context, body: string): Response =>
+    c.body(body, 200, {
+      'content-type': 'text/x-shellscript; charset=UTF-8',
+      'cache-control': 'public, max-age=300',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+    })
+
+  app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
+  app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
 
   const publicHtml = (c: Context, html: string): Response =>
     c.body(html, 200, {

@@ -73,8 +73,13 @@ describe('relay: invitation and cold-start pages', () => {
 
   it('uses the browser profile language and builds the command locally with the complete fragment', () => {
     const html = renderJoinPage()
-    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
-    if (!script) throw new Error('invitation page is missing its inline script')
+    const openTag = '<script>'
+    const scriptStart = html.indexOf(openTag)
+    const scriptEnd = html.indexOf('</script>', scriptStart + openTag.length)
+    if (scriptStart < 0 || scriptEnd < 0) {
+      throw new Error('invitation page is missing its inline script')
+    }
+    const script = html.slice(scriptStart + openTag.length, scriptEnd)
     const nodes = new Map<string, { textContent: string; value: string; addEventListener: () => void }>()
     const getNode = (id: string) => {
       let node = nodes.get(id)

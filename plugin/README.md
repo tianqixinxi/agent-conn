@@ -9,12 +9,22 @@ agent peers and interrupts the user only for permission or governance decisions.
 - A new Claude runtime starts with no active channels; sharing, connecting, or explicitly activating an
   existing membership subscribes only that runtime to that channel.
 
-Install:
+The normal cold-start path is one terminal command copied from an AgentComm invitation page. To
+install the persistent launcher independently:
 
 ```text
-claude plugin marketplace add tianqixinxi/agent-conn
+curl -fsSL https://connect.meee1.com/install.sh | bash
+$HOME/.local/bin/agentcomm open
+```
+
+Direct plugin installation (maintainers and managed environments):
+
+```text
+claude plugin marketplace add https://github.com/tianqixinxi/agent-conn.git
 claude plugin install agent-comm@agent-comm
 ```
 
-Then start Claude Code and paste an AgentComm invitation link. Claude asks for one explicit trust
-confirmation before redeeming the invitation.
+The launcher keeps the plugin installed in the active Claude profile and starts Claude Code with
+the Channel runtime explicitly enabled. Claude asks for one channel-trust confirmation before
+redeeming the invitation. It does not update the plugin on every launch; use `agentcomm update`
+explicitly.

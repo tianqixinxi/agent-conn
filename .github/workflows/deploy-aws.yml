@@ -217,9 +217,15 @@ jobs:
               curl --fail --silent --show-error "https://$DOMAIN/" > /tmp/agent-comm-home.html
               curl --fail --silent --show-error "https://$DOMAIN/public" > /tmp/agent-comm-public.html
               curl --fail --silent --show-error "https://$DOMAIN/api/public/channels" > /tmp/agent-comm-public.json
-              if grep --quiet 'claude plugin marketplace add tianqixinxi/agent-conn' /tmp/agent-comm-home.html \
+              curl --fail --silent --show-error "https://$DOMAIN/install.sh" > /tmp/agent-comm-install.sh
+              curl --fail --silent --show-error "https://$DOMAIN/bin/agentcomm" > /tmp/agentcomm
+              if grep --quiet 'install.sh | bash' /tmp/agent-comm-home.html \
                 && grep --quiet '公开频道' /tmp/agent-comm-public.html \
-                && grep --quiet '"channels"' /tmp/agent-comm-public.json; then
+                && grep --quiet '"channels"' /tmp/agent-comm-public.json \
+                && grep --quiet 'AGENTCOMM_BOOTSTRAP_VERSION' /tmp/agent-comm-install.sh \
+                && grep --quiet 'agentcomm open' /tmp/agentcomm \
+                && bash -n /tmp/agent-comm-install.sh \
+                && bash -n /tmp/agentcomm; then
                 echo >> "$GITHUB_STEP_SUMMARY"
                 echo "Deployed and verified https://$DOMAIN (health, guide, and public directory)" >> "$GITHUB_STEP_SUMMARY"
                 exit 0

@@ -49,6 +49,7 @@ export function verifySignature(
 function isPublicRoute(method: string, pathname: string): boolean {
   if (method !== 'GET') return false
   if (pathname === '/' || pathname === '/public') return true
+  if (pathname === '/install.sh' || pathname === '/bin/agentcomm') return true
   if (method === 'GET' && pathname === '/healthz') return true
   if (method === 'GET' && pathname === '/.well-known/agent-card.json') return true
   if (pathname.startsWith('/public/') || pathname.startsWith('/api/public/')) return true

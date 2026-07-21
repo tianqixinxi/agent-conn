@@ -57,7 +57,7 @@ bin/ac --help                      # 打包产物的入口(任意目录可用;�
 
 `channel` 入口把 AgentComm 变成事件驱动的 Claude Code Channel：A2A Message/Task 到达后会直接唤醒正在运行的 Claude，由 Claude 在已有权限内自动处理；只有 A2A `AUTH_REQUIRED`、Claude Code 自己的权限提示或频道 `intercept` 治理需要人介入。
 
-Claude 只会看到一个意图级 MCP 工具 `agent_comm`，包含 `share / connect / activate / delegate / reply / complete / request_input / request_approval / resolve_approval`。建频道、发布 AgentCard、铸邀请、轮询、游标、ACK、加密和 transport 都不会作为独立工具暴露。消息只有在 Claude 成功回复、完成或暂停任务后才消费；会话异常退出时，未消费消息会在下一次显式激活该频道后重新投递。
+Claude 只会看到一个意图级 MCP 工具 `agent_comm`，包含 `share / connect / activate / broadcast / delegate / reply / complete / request_input / request_approval / resolve_approval`。`broadcast` 明确表示向当前频道所有参与者发布消息，避免让模型用需要接收者的 `delegate` 猜测广播。建频道、发布 AgentCard、铸邀请、轮询、游标、ACK、加密和 transport 都不会作为独立工具暴露。消息只有在 Claude 成功回复、完成或暂停任务后才消费；会话异常退出时，未消费消息会在下一次显式激活该频道后重新投递。
 
 Profile 中的 membership 是持久的身份和历史记录，不是每个 Claude 会话的自动订阅。每个新 runtime 都从零个活跃频道开始；只有本会话执行 `share`、`connect`，或用户明确说“激活已有频道 `claude-duet`”后，才会轮询该频道、发布该频道的 AgentCard、接收消息和治理审批。未激活的历史频道不会发网络请求，也不会因为旧 localhost relay 不可达而影响当前会话。
 
@@ -107,7 +107,7 @@ bin/ac-claude --print-config
 创建并分享频道 claude-duet，别名 alice，auto 模式，邀请只允许使用一次。
 ```
 
-返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。邀请页不再依赖 Claude deep link：它生成一条确定性的终端命令，由持久 `agentcomm` 启动器负责安装、profile 选择和 Channel 启动参数。邀请页支持自动检测以及中文、English、日本語、한국어、Español、Français、Deutsch、Português、Русский手动切换；自动模式读取当前浏览器 Profile 的 `navigator.languages[0]`（回退 `navigator.language`），不等同于操作系统语言；手动选择只保存在当前浏览器的 localStorage。语言偏好和 `#k` 都不会发送给 relay。插件代码安装与频道 membership 信任仍是两个独立决定；启动器不能跳过 Claude Code 或 AgentComm 的信任边界。当前自建 marketplace 会自动使用 development Channel 参数；进入官方 allowlist 后同一启动器自动使用 `--channels`。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
+返回的完整 `http://…/j/…#k=…` 链接可以在浏览器打开。邀请页不再依赖 Claude deep link：它生成一条确定性的终端命令，由持久 `agentcomm` 启动器负责安装、profile 选择和 Channel 启动参数。邀请页支持自动检测以及中文、English、日本語、한국어、Español、Français、Deutsch、Português、Русский手动切换；自动模式读取当前浏览器 Profile 的 `navigator.languages[0]`（回退 `navigator.language`），不等同于操作系统语言；手动选择只保存在当前浏览器的 localStorage。语言偏好和 `#k` 都不会发送给 relay。插件代码安装与频道 membership 信任仍是两个独立决定；启动器不能跳过 Claude Code 或 AgentComm 的信任边界。Claude Channels 研究预览期只允许官方插件或组织管理的 `allowedChannelPlugins` 使用普通 `--channels`；社区 marketplace 默认使用 development Channel 入口，Claude 可能在启动时额外确认一次。组织管理员完成 allowlist 后可设置 `AGENTCOMM_CHANNEL_POLICY=managed`，官方 marketplace 收录后启动器会自动切到普通入口。`#k` 是私有频道的 E2E 密钥，只在浏览器本地和两个 runtime 之间传递，不会发送给 relay。
 
 ### 两个 Claude Code 端到端验收
 

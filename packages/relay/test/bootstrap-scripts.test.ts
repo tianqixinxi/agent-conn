@@ -39,7 +39,7 @@ describe('terminal-first bootstrap scripts', () => {
     }
   })
 
-  it('installs once, reuses the installed version, and starts the development Channel runtime', () => {
+  it('installs once, reuses the installed version, and starts the community preview Channel', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agentcomm-launch-'))
     const launcher = join(dir, 'agentcomm')
     writeFileSync(launcher, renderAgentCommLauncher('https://connect.example.test'))
@@ -75,6 +75,28 @@ describe('terminal-first bootstrap scripts', () => {
     expect(second).toContain('--dangerously-load-development-channels plugin:agent-comm@agent-comm')
   })
 
+  it('asks one human question and gives share explicit public metadata fields', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcomm-public-'))
+    const launcher = join(dir, 'agentcomm')
+    writeFileSync(launcher, renderAgentCommLauncher('https://connect.example.test'))
+    chmodSync(launcher, 0o755)
+    const fake = makeFakeClaude(dir)
+    const env = {
+      ...process.env,
+      AGENTCOMM_CLAUDE_BIN: fake.bin,
+      CLAUDE_CONFIG_DIR: join(dir, 'claude-profile'),
+      FAKE_CLAUDE_LOG: fake.log,
+      FAKE_PLUGIN_STATE: join(dir, 'plugin.state'),
+    }
+
+    execFileSync(launcher, ['create-public', 'https://connect.example.test'], { env })
+    const output = readFileSync(fake.log, 'utf8')
+    expect(output).toContain('Ask one short, human-friendly question')
+    expect(output).toContain('displayName, description, visibility=public, and mode=auto')
+    expect(output).toContain('Do not put displayName in alias')
+    expect(output).toContain('stable /public/<channel> observation URL')
+  })
+
   it('uses the allowlisted Channel flag when the official plugin is installed', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agentcomm-official-'))
     const launcher = join(dir, 'agentcomm')
@@ -93,6 +115,28 @@ describe('terminal-first bootstrap scripts', () => {
     execFileSync(launcher, ['open', 'https://connect.example.test/public/general'], { env })
     const output = readFileSync(fake.log, 'utf8')
     expect(output).toContain('--channels plugin:agent-comm@claude-plugins-official')
+    expect(output).not.toContain('--dangerously-load-development-channels')
+  })
+
+  it('uses the standard Channel flag for an organization-managed allowlist', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentcomm-managed-'))
+    const launcher = join(dir, 'agentcomm')
+    writeFileSync(launcher, renderAgentCommLauncher('https://connect.example.test'))
+    chmodSync(launcher, 0o755)
+    const fake = makeFakeClaude(dir)
+    writeFileSync(join(dir, 'plugin.state'), '')
+    const env = {
+      ...process.env,
+      AGENTCOMM_CLAUDE_BIN: fake.bin,
+      AGENTCOMM_CHANNEL_POLICY: 'managed',
+      CLAUDE_CONFIG_DIR: join(dir, 'claude-profile'),
+      FAKE_CLAUDE_LOG: fake.log,
+      FAKE_PLUGIN_STATE: join(dir, 'plugin.state'),
+    }
+
+    execFileSync(launcher, ['open', 'https://connect.example.test/public/general'], { env })
+    const output = readFileSync(fake.log, 'utf8')
+    expect(output).toContain('--channels plugin:agent-comm@agent-comm')
     expect(output).not.toContain('--dangerously-load-development-channels')
   })
 

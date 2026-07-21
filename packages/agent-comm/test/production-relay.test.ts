@@ -53,7 +53,7 @@ describe('engine + production relay + E2E', () => {
     }
   })
 
-  it('keeps public channels plaintext and marks their invitation explicitly public', async () => {
+  it('keeps public channels plaintext and joins them through their stable observation page', async () => {
     const ws = createTmpWorkspace()
     const alice = await createEngine(ws.profile('public-alice'))
     const bob = await createEngine(ws.profile('public-bob'))

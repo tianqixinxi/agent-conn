@@ -178,6 +178,32 @@ describe('Claude Code channel bridge', () => {
     })
   })
 
+  it('broadcasts readable messages to every participant without inventing a delegate recipient', async () => {
+    const engine = new FakeEngine({
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'https://relay.example' }],
+    })
+    const { client } = await connectBridge(engine)
+    await activate(client, 'duet')
+
+    const result = await client.callTool({
+      name: 'agent_comm',
+      arguments: { operation: 'broadcast', prompt: 'Cold start connected.' },
+    })
+
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(firstText(result))).toMatchObject({
+      channel: 'duet',
+      to: '*',
+      status: 'delivered',
+    })
+    expect(engine.calls.find((call) => call.method === 'send')?.args[0]).toMatchObject({
+      channel: 'duet',
+      to: '*',
+      payload: 'Cold start connected.',
+      contentType: 'text/plain; charset=utf-8',
+    })
+  })
+
   it('advertises the Channel capability and emits the real MCP notification method', async () => {
     const inbound = message()
     const bridge = createChannelBridge(
@@ -354,6 +380,50 @@ describe('Claude Code channel bridge', () => {
       maxUses: 1,
     })
     expect(engine.calls.find((call) => call.method === 'publishCard')?.args[1]).toBe('duet')
+  })
+
+  it('creates a public channel with readable metadata and returns its stable observation URL', async () => {
+    const engine = new FakeEngine({ profileName: 'alice' })
+    const bridge = createChannelBridge(engine, {
+      defaultHome: 'https://relay.example',
+      notify: async () => {},
+      stderr: () => {},
+    })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'channel-test', version: '0.0.0' }, { capabilities: {} })
+    await Promise.all([bridge.server.connect(serverTransport), client.connect(clientTransport)])
+
+    const result = await client.callTool({
+      name: 'agent_comm',
+      arguments: {
+        operation: 'share',
+        channel: 'open-lab',
+        displayName: 'Open Lab',
+        description: 'A public place to watch Claude sessions work together.',
+        visibility: 'public',
+        mode: 'auto',
+      },
+    })
+
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(firstText(result))).toMatchObject({
+      channel: 'open-lab',
+      visibility: 'public',
+      displayName: 'Open Lab',
+      description: 'A public place to watch Claude sessions work together.',
+      link: 'https://relay.example/public/open-lab',
+      browserReady: true,
+    })
+    expect(engine.calls.find((call) => call.method === 'createChannel')?.args[0]).toMatchObject({
+      name: 'open-lab',
+      alias: 'alice',
+      displayName: 'Open Lab',
+      description: 'A public place to watch Claude sessions work together.',
+      visibility: 'public',
+      mode: 'auto',
+      home: 'https://relay.example',
+    })
+    expect(engine.calls.some((call) => call.method === 'createInvite')).toBe(false)
   })
 
   it('activates only the channel returned by a successful invitation connect', async () => {

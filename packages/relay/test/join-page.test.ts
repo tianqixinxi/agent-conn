@@ -66,8 +66,9 @@ describe('relay: invitation and cold-start pages', () => {
     expect(launcher.status).toBe(200)
     const script = await launcher.text()
     expect(script).toContain('agentcomm open [invitation-url]')
-    expect(script).toContain('--dangerously-load-development-channels')
     expect(script).toContain('--channels')
+    expect(script).toContain('--dangerously-load-development-channels')
+    expect(script).toContain('AGENTCOMM_CHANNEL_POLICY')
     expect(script).toContain('plugin:$ACTIVE_PLUGIN_ID')
   })
 

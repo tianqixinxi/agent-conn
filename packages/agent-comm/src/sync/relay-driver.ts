@@ -13,7 +13,7 @@ import {
   WIRE_HEADERS,
   WireErrorSchema,
   wireRoutes,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
 import type { RelayDriverFactory, TransportBinding } from '../transport/api.js'
 import { normalizeRelayOrigin, safeRelayRequest } from './safe-relay-request.js'
 
@@ -138,6 +138,7 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       // bootstrap 端点(wire.ts postCreate,D9 回填):创建频道并成为首个成员
       const body = {
         alias: createInput.member.alias,
+        name: createInput.name,
         mode: createInput.mode,
         visibility: createInput.visibility,
         displayName: createInput.displayName,
@@ -148,7 +149,12 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
           publicKey: createInput.member.publicKey ?? identity.publicKey,
         },
       }
-      await call('POST', wireRoutes.postCreate(createInput.name), body, PostCreateChannelRespSchema)
+      await call(
+        'POST',
+        wireRoutes.postCreate(createInput.channelId ?? createInput.name),
+        body,
+        PostCreateChannelRespSchema,
+      )
     },
 
     async join(joinInput) {
@@ -167,6 +173,8 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       // wire 的 PostJoinRespSchema 不携带 scope 字段(契约问题,见最终汇报);此处恒为 undefined。
       return {
         channel: resp.channel,
+        channelId: resp.channelId ?? resp.channel,
+        name: resp.name,
         mode: resp.mode,
         visibility: resp.visibility,
         members: resp.members,
@@ -191,6 +199,8 @@ export const createRelayDriver: RelayDriverFactory = (input) => {
       )
       return {
         channel: resp.channel,
+        channelId: resp.channelId ?? resp.channel,
+        name: resp.name,
         mode: resp.mode,
         visibility: resp.visibility,
         members: resp.members,

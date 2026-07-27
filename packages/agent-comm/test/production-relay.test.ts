@@ -4,6 +4,33 @@ import { createFakeRelay } from './helpers/fake-relay.js'
 import { createTmpWorkspace } from './helpers/tmp-profile.js'
 
 describe('engine + production relay + E2E', () => {
+  it('allows duplicate channel aliases by allocating separate relay route ids', async () => {
+    const ws = createTmpWorkspace()
+    const alice = await createEngine(ws.profile('duplicate-alias'))
+    const identity = await alice.identity()
+    const relay = await createFakeRelay([{ nodeId: identity.nodeId, publicKey: identity.publicKey }])
+
+    try {
+      const first = await alice.createChannel(
+        { name: 'daily', alias: 'alice', home: relay.url },
+        'agent:alice',
+      )
+      const second = await alice.createChannel(
+        { name: 'daily', alias: 'alice-2', home: relay.url },
+        'agent:alice',
+      )
+      expect(first.name).toBe('daily')
+      expect(second.name).toBe('daily')
+      expect(first.channelId).toBe('daily')
+      expect(second.channelId).toMatch(/^c-/)
+      expect(relay.channels.has(first.channelId ?? '')).toBe(true)
+      expect(relay.channels.has(second.channelId ?? '')).toBe(true)
+    } finally {
+      await Promise.all([alice.close(), relay.close()])
+      ws.cleanup()
+    }
+  })
+
   it('connects two profiles through a real HTTP driver and keeps relay payloads encrypted', async () => {
     const ws = createTmpWorkspace()
     const alice = await createEngine(ws.profile('alice'))
@@ -53,7 +80,7 @@ describe('engine + production relay + E2E', () => {
     }
   })
 
-  it('keeps public channels plaintext and marks their invitation explicitly public', async () => {
+  it('keeps public channels plaintext and joins them through their stable observation page', async () => {
     const ws = createTmpWorkspace()
     const alice = await createEngine(ws.profile('public-alice'))
     const bob = await createEngine(ws.profile('public-bob'))

@@ -3,6 +3,35 @@ import { createChannelBootstrap, listPublicChannels, openDb, PRESENCE_LEASE_MS }
 import { freshApp, makeEnvelope, makeIdentity, signedRequest } from './helpers.js'
 
 describe('relay public channels', () => {
+  it('keeps the human alias non-unique while routing public pages by channelId', () => {
+    const db = openDb(':memory:')
+    createChannelBootstrap(db, {
+      channel: 'daily',
+      name: 'daily',
+      alias: 'alice',
+      nodeId: 'n-daily-1',
+      publicKey: 'pk-1',
+      visibility: 'public',
+    })
+    createChannelBootstrap(db, {
+      channel: 'c-daily-2',
+      name: 'daily',
+      alias: 'bob',
+      nodeId: 'n-daily-2',
+      publicKey: 'pk-2',
+      visibility: 'public',
+    })
+
+    expect(
+      listPublicChannels(db)
+        .map((channel) => [channel.name, channel.channelId])
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1]))),
+    ).toEqual([
+      ['daily', 'c-daily-2'],
+      ['daily', 'daily'],
+    ])
+  })
+
   it('serves installation guidance and only exposes plaintext messages from public channels', async () => {
     const app = freshApp()
     const lead = makeIdentity('public-lead')
@@ -25,12 +54,50 @@ describe('relay public channels', () => {
     expect(homeHtml).toContain('window.localStorage.removeItem(storageKey)')
     expect(homeHtml).toContain('data-i18n="heroCopy"')
     expect(homeHtml).toContain('data-agentcomm-action="create"')
-    expect(homeHtml).toContain('Give Claude')
+    expect(homeHtml).toContain('Agents can talk.')
     expect(homeHtml).toContain('Three steps, then let the Claude sessions work.')
     expect(homeHtml).toContain('data-value-online="0"')
-    expect(homeHtml).toContain('Claude に、')
-    expect(homeHtml).toContain('Dale a Claude')
-    expect(homeHtml).toContain('Дайте Claude')
+    expect(homeHtml).toContain('Agent は話せる。')
+    expect(homeHtml).toContain('Los agentes conversan.')
+    expect(homeHtml).toContain('Агенты общаются.')
+    expect(homeHtml).toContain('https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md')
+    expect(homeHtml).toContain(
+      'https://github.com/tianqixinxi/agent-conn/tree/main/applications/manager-workers',
+    )
+    expect(homeHtml).toContain(
+      'Full Milestone 1 worker lifecycle and worktree automation are not yet claimed complete.',
+    )
+    expect(homeHtml).toContain('DeliveryHoldDecision, TaskAuthorization, and HostPermission')
+    expect(homeHtml).toContain('never installs or executes code')
+    for (const packageName of [
+      '@agent-comm/core',
+      '@agent-comm/delivery',
+      '@agent-comm/application-spec',
+      '@agent-comm/client-sdk',
+      '@agent-comm/a2a-binding',
+      '@agent-comm/harness-claude-code',
+      '@agent-comm/gateway-a2a',
+      '@agent-comm/relay',
+    ]) {
+      expect(homeHtml).toContain(packageName)
+    }
+    for (const key of [
+      'protocolCopy',
+      'layerCommunityTitle',
+      'layerSpecTitle',
+      'layerHarnessTitle',
+      'layerCoreTitle',
+      'layerRelayTitle',
+      'componentsTitle',
+      'referenceCaveat',
+      'securityTitle',
+      'privacyCopy',
+      'decisionsCopy',
+      'extensionsCopy',
+    ]) {
+      expect(homeHtml).toContain(`data-i18n="${key}"`)
+      expect(homeHtml.split(`"${key}":`)).toHaveLength(10)
+    }
 
     const publicCreatePath = '/ch/open-lab/create'
     const publicCreateBody = {

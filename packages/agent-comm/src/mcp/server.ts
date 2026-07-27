@@ -1,4 +1,4 @@
-import { isAgentCommError } from '@agent-comm/protocol'
+import { isAgentCommError } from '@agent-comm/core'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'

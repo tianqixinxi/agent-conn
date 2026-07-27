@@ -13,7 +13,7 @@ import {
   newJoinToken,
   nowIso,
   type WireEnvelope,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
 import { sha256Hex } from './hash.js'
 
 /**
@@ -27,6 +27,7 @@ import { sha256Hex } from './hash.js'
 
 interface ChannelRow {
   name: string
+  channel_name: string | null
   display_name: string | null
   mode: ChannelMode
   visibility: ChannelVisibility
@@ -109,6 +110,10 @@ export function openDb(dbPath: string): RelayDb {
   if (!channelColumns.some((column) => column.name === 'visibility')) {
     raw.exec("ALTER TABLE channels ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
   }
+  if (!channelColumns.some((column) => column.name === 'channel_name')) {
+    raw.exec('ALTER TABLE channels ADD COLUMN channel_name TEXT')
+    raw.exec('UPDATE channels SET channel_name = name WHERE channel_name IS NULL')
+  }
   const memberColumns = raw.prepare("PRAGMA table_info('members')").all() as { name: string }[]
   if (!memberColumns.some((column) => column.name === 'last_seen_at')) {
     raw.exec('ALTER TABLE members ADD COLUMN last_seen_at TEXT')
@@ -160,6 +165,8 @@ export function requireMember(db: RelayDb, channel: string, nodeId: string): Mem
 
 export interface JoinLikeResult {
   channel: string
+  channelId?: string
+  name?: string
   mode: ChannelMode
   visibility: ChannelVisibility
   myAlias: string
@@ -179,6 +186,7 @@ export function listMembers(db: RelayDb, channel: string): MemberRow[] {
 }
 
 export interface PublicChannelSummary {
+  channelId?: string | undefined
   name: string
   displayName?: string | undefined
   description?: string | undefined
@@ -208,6 +216,7 @@ export interface PublicChannelAgent {
 
 function publicSummaryFromRow(row: {
   name: string
+  channel_name: string | null
   display_name: string | null
   description: string | null
   created_at: string
@@ -217,7 +226,8 @@ function publicSummaryFromRow(row: {
   last_activity_at: string | null
 }): PublicChannelSummary {
   return {
-    name: row.name,
+    channelId: row.name,
+    name: row.channel_name ?? row.name,
     ...(row.display_name ? { displayName: row.display_name } : {}),
     ...(row.description ? { description: row.description } : {}),
     createdAt: row.created_at,
@@ -229,7 +239,7 @@ function publicSummaryFromRow(row: {
 }
 
 const PUBLIC_SUMMARY_SELECT = `
-  SELECT c.name, c.display_name, c.description, c.created_at,
+  SELECT c.name, c.channel_name, c.display_name, c.description, c.created_at,
     (SELECT COUNT(*) FROM members mb WHERE mb.channel = c.name) AS member_count,
     (SELECT COUNT(*) FROM messages msg WHERE msg.channel = c.name AND msg.status = 'delivered') AS message_count,
     (SELECT COUNT(*) FROM members online_mb WHERE online_mb.channel = c.name
@@ -351,6 +361,8 @@ function buildJoinLikeResult(
 ): JoinLikeResult {
   return {
     channel,
+    channelId: channel,
+    name: getChannelRow(db, channel)?.channel_name ?? channel,
     mode,
     visibility: getChannelRow(db, channel)?.visibility ?? 'private',
     myAlias,
@@ -400,6 +412,7 @@ export function createChannelBootstrap(
     publicKey: string
     mode?: ChannelMode
     visibility?: ChannelVisibility
+    name?: string
     displayName?: string
     description?: string
     card?: AgentCard
@@ -414,10 +427,18 @@ export function createChannelBootstrap(
   try {
     db.raw
       .prepare(
-        `INSERT INTO channels (name, display_name, mode, visibility, description, head_seq, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?)`,
+        `INSERT INTO channels (name, channel_name, display_name, mode, visibility, description, head_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
       )
-      .run(args.channel, args.displayName ?? null, mode, visibility, args.description ?? null, nowIso())
+      .run(
+        args.channel,
+        args.name ?? args.channel,
+        args.displayName ?? null,
+        mode,
+        visibility,
+        args.description ?? null,
+        nowIso(),
+      )
     db.raw
       .prepare(
         `INSERT INTO members (channel, alias, node_id, public_key, scope_json, card_json, joined_at, last_seen_at, join_seq)

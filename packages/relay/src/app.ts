@@ -1,20 +1,10 @@
 import {
-  A2A_MEDIA_TYPE,
-  A2A_PROTOCOL_VERSION,
-  type A2ASendMessageRequest,
-  A2ATaskState,
   AgentCommError,
-  a2aAgentCardToJson,
-  a2aSendMessageRequestFromJson,
-  a2aSendMessageResponseToJson,
-  createAgentCommAgentCard,
-  encodeA2AEvent,
   GetMembersRespSchema,
   GetMessagesQuerySchema,
   GetMessagesRespSchema,
   isAgentCommError,
   type Message,
-  type MessageEnvelope,
   nowIso,
   PostAckReqSchema,
   PostAckRespSchema,
@@ -30,8 +20,15 @@ import {
   PostJoinRespSchema,
   PostMessagesReqSchema,
   PostMessagesRespSchema,
-  readAgentCommRouting,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
+import {
+  A2A_GATEWAY_RESPONSE_HEADERS,
+  createA2AGatewayAgentCard,
+  createA2AGatewaySubmittedResponse,
+  parseA2AGatewayRequest,
+  readA2AGatewayRouting,
+  toA2AGatewayIngress,
+} from '@agent-comm/gateway-a2a'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { createAuthMiddleware, requireHeaderNode } from './auth.js'
@@ -70,7 +67,7 @@ import {
  * 只在频道尚不存在时可用(已存在→409 CHANNEL_EXISTS),调用者成为首个成员;
  * 鉴权与 POST /join 同构(首次露面节点用 body.node.publicKey 做 TOFU 验签,见 auth.ts)。
  * 该端点最初由 W4 本地定义,集成收口时已回填为 protocol/wire.ts 正式契约(DECISIONS D9),
- * schema 从 @agent-comm/protocol 导入。
+ * schema 从 @agent-comm/core 导入。
  */
 
 export interface RelayDeps {
@@ -222,9 +219,9 @@ export function createApp(deps: RelayDeps): Hono {
       agents,
       join: {
         operation: 'connect',
-        link: `${origin}/public/${encodeURIComponent(channel.name)}`,
+        link: `${origin}/public/${encodeURIComponent(channel.channelId ?? channel.name)}`,
       },
-      messages: `${origin}/api/public/channels/${encodeURIComponent(channel.name)}/messages`,
+      messages: `${origin}/api/public/channels/${encodeURIComponent(channel.channelId ?? channel.name)}/messages`,
     })
   })
   app.get(
@@ -259,17 +256,7 @@ export function createApp(deps: RelayDeps): Hono {
   app.get('/.well-known/agent-card.json', (c) => {
     if (!deps.enableA2AIngress) return c.notFound()
     const origin = requestOrigin(c)
-    const card = createAgentCommAgentCard({
-      name: 'AgentComm Relay',
-      description: 'Store-and-forward A2A relay for private AgentComm channels.',
-      endpoint: `${origin}/a2a/v1`,
-      protocolBinding: 'HTTP+JSON',
-      skillDescription: 'Route delegated work into a private AgentComm channel.',
-    })
-    return c.body(JSON.stringify(a2aAgentCardToJson(card)), 200, {
-      'content-type': A2A_MEDIA_TYPE,
-      'A2A-Version': A2A_PROTOCOL_VERSION,
-    })
+    return c.body(JSON.stringify(createA2AGatewayAgentCard(origin)), 200, A2A_GATEWAY_RESPONSE_HEADERS)
   })
 
   // §2.8:人类引导页,不读 fragment、不判断 token 有效性(join-page.ts 顶部注释)
@@ -279,86 +266,25 @@ export function createApp(deps: RelayDeps): Hono {
     '/a2a/v1/message:send',
     withErrors(async (c) => {
       if (!deps.enableA2AIngress) return c.notFound()
-      const requestedVersion = c.req.header('A2A-Version')
-      if (requestedVersion && requestedVersion !== A2A_PROTOCOL_VERSION) {
-        throw new AgentCommError(
-          'INVALID_INPUT',
-          `unsupported A2A version ${requestedVersion}; expected ${A2A_PROTOCOL_VERSION}`,
-        )
-      }
-      let request: A2ASendMessageRequest
-      try {
-        request = a2aSendMessageRequestFromJson(await readJson(c))
-      } catch (error) {
-        throw new AgentCommError(
-          'INVALID_INPUT',
-          error instanceof Error ? error.message : 'invalid A2A SendMessageRequest',
-        )
-      }
-      if (request.configuration?.returnImmediately !== true) {
-        throw new AgentCommError(
-          'INVALID_INPUT',
-          'AgentComm relay is asynchronous; configuration.returnImmediately must be true',
-        )
-      }
-      const message = request.message
-      if (!message) throw new AgentCommError('INVALID_INPUT', 'A2A message is required')
-      const routing = readAgentCommRouting(message)
-      if (!routing) {
-        throw new AgentCommError(
-          'INVALID_INPUT',
-          'message metadata is missing the AgentComm private-channel routing extension',
-        )
-      }
+      const request = parseA2AGatewayRequest(await readJson(c), c.req.header('A2A-Version'))
+      const { routing } = readA2AGatewayRouting(request)
       const nodeId = requireHeaderNode(c)
       const member = requireMember(db, routing.channel, nodeId)
       const timestamp = nowIso()
-      const envelope: MessageEnvelope = {
-        messageId: message.messageId,
-        from: member.alias,
-        to: routing.to,
-        channel: routing.channel,
-        traceId: message.contextId || message.messageId,
-        ...(routing.replyTo ? { replyTo: routing.replyTo } : {}),
-        hop: 0,
-        contentType: A2A_MEDIA_TYPE,
-        payload: encodeA2AEvent({ kind: 'message', value: message }),
-        injectedByHuman: false,
-        ts: timestamp,
-      }
+      const ingress = toA2AGatewayIngress(request, member.alias, timestamp)
       const [accepted] = appendMessages(db, {
-        channel: routing.channel,
+        channel: ingress.channelId,
         nodeId,
-        envelopes: [envelope],
+        envelopes: [ingress.envelope],
       })
       if (!accepted) throw new AgentCommError('STORE_BUSY', 'relay did not accept A2A message')
-      const taskId = routing.taskId ?? (message.taskId || `task-${message.messageId}`)
-      const task = {
-        id: taskId,
-        contextId: message.contextId || message.messageId,
-        status: {
-          state:
-            accepted.status === 'held'
-              ? A2ATaskState.TASK_STATE_AUTH_REQUIRED
-              : A2ATaskState.TASK_STATE_SUBMITTED,
-          message: undefined,
-          timestamp,
-        },
-        artifacts: [],
-        history: [message],
-        metadata: {
-          transport: 'agentcomm-relay',
-          transportStatus: accepted.status,
-          sequence: accepted.seq,
-        },
-      }
-      const body = a2aSendMessageResponseToJson({
-        payload: { $case: 'task', value: task },
+      const body = createA2AGatewaySubmittedResponse({
+        message: ingress.message,
+        taskId: ingress.taskId,
+        timestamp,
+        accepted,
       })
-      return c.body(JSON.stringify(body), 200, {
-        'content-type': A2A_MEDIA_TYPE,
-        'A2A-Version': A2A_PROTOCOL_VERSION,
-      })
+      return c.body(JSON.stringify(body), 200, A2A_GATEWAY_RESPONSE_HEADERS)
     }),
   )
 
@@ -424,6 +350,7 @@ export function createApp(deps: RelayDeps): Hono {
         publicKey: parsed.data.node.publicKey,
         mode: parsed.data.mode,
         visibility: parsed.data.visibility,
+        name: parsed.data.name,
         displayName: parsed.data.displayName,
         description: parsed.data.description,
         card: parsed.data.card,

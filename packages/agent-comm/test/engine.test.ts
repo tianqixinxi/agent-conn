@@ -34,6 +34,21 @@ async function withCtx(fn: (ctx: Ctx) => Promise<void>): Promise<void> {
 }
 
 describe('engine (F1-F5 over a shared local hub)', () => {
+  it('treats the channel name as an alias and allocates a distinct channelId on collision', async () => {
+    await withCtx(async ({ makeEngine }) => {
+      const alice = await makeEngine('alice')
+      const first = await alice.createChannel({ name: 'daily', alias: 'alice' }, 'agent:alice')
+      const second = await alice.createChannel({ name: 'daily', alias: 'alice-2' }, 'agent:alice')
+
+      expect(first.name).toBe('daily')
+      expect(second.name).toBe('daily')
+      expect(first.channelId).toBe('daily')
+      expect(second.channelId).toMatch(/^c-/)
+      expect(second.channelId).not.toBe(first.channelId)
+      expect((await alice.listChannels()).map((channel) => channel.name)).toEqual(['daily', 'daily'])
+    })
+  })
+
   it('F1+F2+F3: A creates channel, mints invite, B connects, A sends directed, B reads and consumes', async () => {
     await withCtx(async ({ makeEngine }) => {
       const alice = await makeEngine('alice')

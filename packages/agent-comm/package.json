@@ -12,7 +12,15 @@
   "bin": {
     "agent-comm": "./src/main.ts"
   },
+  "exports": {
+    "./channel": "./src/mcp/channel.ts"
+  },
   "dependencies": {
+    "@agent-comm/application-spec": "workspace:*",
+    "@agent-comm/a2a-binding": "workspace:*",
+    "@agent-comm/client-sdk": "workspace:*",
+    "@agent-comm/core": "workspace:*",
+    "@agent-comm/delivery": "workspace:*",
     "@agent-comm/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "commander": "^15.0.0",

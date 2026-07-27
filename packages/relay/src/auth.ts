@@ -1,5 +1,5 @@
 import { createPublicKey, verify as edVerify } from 'node:crypto'
-import { WIRE_HEADERS } from '@agent-comm/protocol'
+import { WIRE_HEADERS } from '@agent-comm/core'
 import type { Context, MiddlewareHandler, Next } from 'hono'
 import { sha256Hex } from './hash.js'
 import { wireError } from './http.js'

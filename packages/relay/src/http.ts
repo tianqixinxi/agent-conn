@@ -1,4 +1,4 @@
-import type { ErrorCode } from '@agent-comm/protocol'
+import type { ErrorCode } from '@agent-comm/core'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 

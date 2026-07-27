@@ -1,5 +1,5 @@
-import type { ChannelMode } from '@agent-comm/protocol'
-import { AgentCommError, isAgentCommError } from '@agent-comm/protocol'
+import type { ChannelMode } from '@agent-comm/core'
+import { AgentCommError, isAgentCommError } from '@agent-comm/core'
 import { Command, CommanderError } from 'commander'
 import type { ProfilePaths } from '../config.js'
 import { resolveProfile } from '../config.js'
@@ -174,7 +174,11 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
       const c = requireCtx()
       const list = await c.engine.listChannels()
       const human = list.length
-        ? list.map((ch) => `- ${ch.name}  home=${ch.home}  mode=${ch.mode}`).join('\n')
+        ? list
+            .map(
+              (ch) => `- ${ch.name}  channelId=${ch.channelId ?? ch.name}  home=${ch.home}  mode=${ch.mode}`,
+            )
+            .join('\n')
         : '(未加入任何频道)'
       printResult(c, list, human)
     })
@@ -221,7 +225,7 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
         printResult(
           c,
           channel,
-          `已创建频道 ${channel.name}(mode=${channel.mode}, visibility=${channel.visibility})`,
+          `已创建频道 ${channel.name} [channelId=${channel.channelId ?? channel.name}](mode=${channel.mode}, visibility=${channel.visibility})`,
         )
       },
     )

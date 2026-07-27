@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path'
-import type { AgentCard, AuditEvent, InviteScope, Message, MessageEnvelope } from '@agent-comm/protocol'
+import type { AgentCard, AuditEvent, InviteScope, Message, MessageEnvelope } from '@agent-comm/core'
 import {
   AgentCommError,
   formatLocalInviteLink,
@@ -7,10 +7,11 @@ import {
   formatTransportInviteLink,
   HOP_LIMIT,
   isAgentCommError,
+  newChannelId,
   newMessageId,
   nowIso,
   parseInviteLink,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
 import type { ProfilePaths } from '../config.js'
 import { loadE2eKey, newE2eKey, saveE2eKey, validateE2eKey } from '../crypto/e2e.js'
 import { ensureIdentity, signCanonical } from '../crypto/identity.js'
@@ -38,6 +39,10 @@ function hubPathOf(home: string): string {
   return home.slice('local:'.length)
 }
 
+function channelIdOf(channel: StoreChannelRow): string {
+  return channel.channelId ?? channel.name
+}
+
 /** store 的 StoreMessageRow(+ 可选 inbox 字段)→ protocol 的 Message */
 function toProtocolMessage(row: StoreMessageRow): Message {
   return {
@@ -50,6 +55,7 @@ function toProtocolMessage(row: StoreMessageRow): Message {
     replyBy: row.replyBy,
     hop: row.hop,
     contentType: row.contentType,
+    runtimeInstanceId: row.runtimeInstanceId,
     payload: row.payload,
     injectedByHuman: row.injectedByHuman,
     ts: row.ts,
@@ -73,6 +79,7 @@ function fromProtocolMessage(m: Message, channel: string): Omit<StoreMessageRow,
     replyBy: m.replyBy,
     hop: m.hop,
     contentType: m.contentType,
+    runtimeInstanceId: m.runtimeInstanceId,
     payload: m.payload,
     injectedByHuman: m.injectedByHuman,
     ts: m.ts,
@@ -134,13 +141,21 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
   async function getChannelDriver(ch: StoreChannelRow): Promise<TransportBinding> {
     const driver = await getTransportBinding(ch.home)
     if (driver.kind === 'local' || ch.visibility === 'public' || !ch.e2eKeyRef) return driver
-    return withE2e(driver, loadE2eKey(trustedChannelKeyPath(ch.name, ch.e2eKeyRef)))
+    return withE2e(driver, loadE2eKey(trustedChannelKeyPath(channelIdOf(ch), ch.e2eKeyRef)))
   }
 
-  function requireChannel(name: string): StoreChannelRow {
-    const ch = store.channels.get(name)
-    if (!ch) throw new AgentCommError('NOT_MEMBER', `not a member of channel: ${name}`)
-    return ch
+  function requireChannel(ref: string): StoreChannelRow {
+    const direct = store.channels.get(ref)
+    if (direct) return direct
+    const matches = store.channels.list().filter((channel) => channel.name === ref)
+    if (matches.length === 1) {
+      const only = matches[0]
+      if (only) return only
+    }
+    if (matches.length > 1) {
+      throw new AgentCommError('INVALID_INPUT', `channel alias is ambiguous; use channelId: ${ref}`)
+    }
+    throw new AgentCommError('NOT_MEMBER', `not a member of channel: ${ref}`)
   }
 
   function resolveChannelName(explicit: string | undefined): string {
@@ -148,7 +163,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     const channels = store.channels.list()
     if (channels.length === 1) {
       const only = channels[0]
-      if (only) return only.name
+      if (only) return channelIdOf(only)
     }
     throw new AgentCommError('INVALID_INPUT', 'channel is required when member of zero or multiple channels')
   }
@@ -173,6 +188,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     from?: string | undefined
     to?: string | undefined
     actor: string
+    runtimeInstanceId?: string | undefined
     detail?: string | undefined
   }): void {
     store.audit.append({
@@ -183,6 +199,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       fromAlias: entry.from,
       toTarget: entry.to,
       actor: entry.actor,
+      runtimeInstanceId: entry.runtimeInstanceId,
       detail: entry.detail,
     })
   }
@@ -197,7 +214,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const driver = await getChannelDriver(ch)
       let held: Message[]
       try {
-        held = await driver.listHeld(ch.name)
+        held = await driver.listHeld(channelIdOf(ch))
       } catch (err) {
         if (
           isAgentCommError(err, 'NOT_IMPLEMENTED') ||
@@ -208,7 +225,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         throw err
       }
       const match = held.find((m) => m.messageId === messageId)
-      if (match) return { channel: ch.name, home: ch.home, message: match }
+      if (match) return { channel: channelIdOf(ch), home: ch.home, message: match }
     }
     return undefined
   }
@@ -259,7 +276,9 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       return {
         nodeId: identity.nodeId,
         profile: profile.name,
-        memberships: store.channels.list().map((c) => ({ channel: c.name, alias: c.myAlias, home: c.home })),
+        memberships: store.channels
+          .list()
+          .map((c) => ({ channel: channelIdOf(c), alias: c.myAlias, home: c.home })),
       }
     },
 
@@ -270,7 +289,9 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     async createChannel(input, actor) {
       const home = input.home ?? localHomeString(profile.defaultHubPath)
       const driver = await getTransportBinding(home)
-      await driver.createChannel({
+      let channelId = input.channelId ?? input.name
+      const createInput = () => ({
+        channelId,
         name: input.name,
         displayName: input.displayName,
         mode: input.mode,
@@ -278,13 +299,23 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         description: input.description,
         member: { alias: input.alias, nodeId: identity.nodeId, publicKey: identity.publicKey },
       })
+      try {
+        await driver.createChannel(createInput())
+      } catch (err) {
+        // A repeated human alias is allowed. Keep the legacy alias-as-id for the first
+        // channel, then allocate an opaque route id when that id is already occupied.
+        if (!isAgentCommError(err, 'CHANNEL_EXISTS') || input.channelId !== undefined) throw err
+        channelId = newChannelId()
+        await driver.createChannel(createInput())
+      }
       const createdAt = nowIso()
       const mode = input.mode ?? 'auto'
       const visibility = input.visibility ?? 'private'
       const e2eKeyRef =
-        home.startsWith('local:') || visibility === 'public' ? undefined : channelKeyPath(input.name)
+        home.startsWith('local:') || visibility === 'public' ? undefined : channelKeyPath(channelId)
       if (e2eKeyRef) saveE2eKey(e2eKeyRef, newE2eKey())
       store.channels.upsert({
+        channelId,
         name: input.name,
         home,
         displayName: input.displayName,
@@ -297,22 +328,23 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         createdAt,
       })
       store.peers.upsert({
-        channel: input.name,
+        channel: channelId,
         alias: input.alias,
         nodeId: identity.nodeId,
         card: undefined,
         updatedAt: createdAt,
       })
-      store.syncState.set(input.name, 0)
+      store.syncState.set(channelId, 0)
       appendAudit({
         event: 'connected',
-        channel: input.name,
+        channel: channelId,
         from: input.alias,
         actor,
         detail: 'createChannel',
       })
       return {
         name: input.name,
+        channelId,
         home,
         displayName: input.displayName,
         mode,
@@ -336,7 +368,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const alreadyKnown = store.channels.get(result.channel) !== undefined
       const createdAt = nowIso()
       store.channels.upsert({
-        name: result.channel,
+        channelId: result.channel,
+        name: result.name ?? result.channel,
         home,
         mode: result.mode,
         visibility: result.visibility,
@@ -365,6 +398,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       if (!stored) throw new AgentCommError('CONFLICT', 'channel disappeared right after join')
       return {
         name: stored.name,
+        channelId: channelIdOf(stored),
         home: stored.home,
         displayName: stored.displayName,
         mode: stored.mode,
@@ -376,15 +410,17 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async leaveChannel(input, _actor) {
       const ch = requireChannel(input.channel)
+      const channelId = channelIdOf(ch)
       const driver = await getChannelDriver(ch)
-      await driver.leave({ channel: input.channel, alias: ch.myAlias, nodeId: identity.nodeId })
-      store.channels.delete(input.channel)
+      await driver.leave({ channel: channelId, alias: ch.myAlias, nodeId: identity.nodeId })
+      store.channels.delete(channelId)
       // 注:协议 AuditEvent 枚举没有"离开/断开"事件码,此动作不记 audit(见最终汇报)。
     },
 
     async listChannels() {
       return store.channels.list().map((c) => ({
         name: c.name,
+        channelId: channelIdOf(c),
         home: c.home,
         displayName: c.displayName,
         mode: c.mode,
@@ -400,12 +436,13 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = input?.channel !== undefined ? [requireChannel(input.channel)] : store.channels.list()
       const presence = new Map<string, boolean>()
       for (const ch of channels) {
+        const channelId = channelIdOf(ch)
         try {
           const driver = await getChannelDriver(ch)
-          for (const m of await driver.members(ch.name)) {
-            if (m.online !== undefined) presence.set(`${ch.name}\0${m.nodeId}`, m.online)
+          for (const m of await driver.members(channelId)) {
+            if (m.online !== undefined) presence.set(`${channelId}\0${m.nodeId}`, m.online)
             store.peers.upsert({
-              channel: ch.name,
+              channel: channelId,
               alias: m.alias,
               nodeId: m.nodeId,
               card: m.card,
@@ -416,10 +453,15 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           if (!isAgentCommError(e, 'HOME_UNREACHABLE')) throw e
         }
       }
-      return store.peers.list(input?.channel).map((p) => ({
+      const selectedChannel = input?.channel === undefined ? undefined : requireChannel(input.channel)
+      const peerChannel = selectedChannel === undefined ? undefined : channelIdOf(selectedChannel)
+      return store.peers.list(peerChannel).map((p) => ({
         alias: p.alias,
         nodeId: p.nodeId,
         channel: p.channel,
+        ...(selectedChannel && p.channel === peerChannel && selectedChannel.name !== p.channel
+          ? { channelName: selectedChannel.name }
+          : {}),
         ...(presence.has(`${p.channel}\0${p.nodeId}`)
           ? { online: presence.get(`${p.channel}\0${p.nodeId}`) }
           : {}),
@@ -430,11 +472,12 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     async publishCard(card: AgentCard, _actor, channelFilter) {
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       for (const ch of channels) {
+        const channelId = channelIdOf(ch)
         try {
           const driver = await getChannelDriver(ch)
-          await driver.updateCard({ channel: ch.name, alias: ch.myAlias, nodeId: identity.nodeId, card })
+          await driver.updateCard({ channel: channelId, alias: ch.myAlias, nodeId: identity.nodeId, card })
           store.peers.upsert({
-            channel: ch.name,
+            channel: channelId,
             alias: ch.myAlias,
             nodeId: identity.nodeId,
             card,
@@ -450,10 +493,11 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
     async createInvite(input, _actor) {
       const ch = requireChannel(input.channel)
+      const channelId = channelIdOf(ch)
       const driver = await getChannelDriver(ch)
       const maxUses = input.maxUses ?? 1
       const minted = await driver.mintInvite({
-        channel: input.channel,
+        channel: channelId,
         byNode: identity.nodeId,
         scope: input.scope,
         ttlMs: input.ttlMs,
@@ -461,9 +505,9 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       })
       let e2eKey: string | undefined
       if (!ch.home.startsWith('local:') && ch.visibility === 'private') {
-        const e2eKeyRef = ch.e2eKeyRef ?? channelKeyPath(ch.name)
+        const e2eKeyRef = ch.e2eKeyRef ?? channelKeyPath(channelId)
         if (ch.e2eKeyRef) {
-          e2eKey = loadE2eKey(trustedChannelKeyPath(ch.name, ch.e2eKeyRef))
+          e2eKey = loadE2eKey(trustedChannelKeyPath(channelId, ch.e2eKeyRef))
         } else {
           e2eKey = newE2eKey()
           saveE2eKey(e2eKeyRef, e2eKey)
@@ -477,7 +521,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           : formatTransportInviteLink(ch.home, minted.joinToken, e2eKey)
       store.invitesMinted.insert({
         link,
-        channel: input.channel,
+        channel: channelId,
         home: ch.home,
         scope: input.scope,
         expiresAt: minted.expiresAt,
@@ -541,7 +585,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         saveE2eKey(e2eKeyRef, e2eKey)
       }
       store.channels.upsert({
-        name: result.channel,
+        channelId: result.channel,
+        name: result.name ?? result.channel,
         home,
         mode: result.mode,
         visibility: result.visibility,
@@ -569,11 +614,13 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       })
       return {
         channel: result.channel,
+        channelId: result.channel,
         myAlias: input.alias,
         peers: result.members.map((m) => ({
           alias: m.alias,
           nodeId: m.nodeId,
           channel: result.channel,
+          ...(result.name && result.name !== result.channel ? { channelName: result.name } : {}),
           ...(m.online !== undefined ? { online: m.online } : {}),
           card: m.card,
         })),
@@ -583,6 +630,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     async send(input, actor) {
       const channelName = resolveChannelName(input.channel)
       const ch = requireChannel(channelName)
+      const channelId = channelIdOf(ch)
       checkScope(ch.scope, input.to, input.contentType)
       const driver = await getChannelDriver(ch)
       const messageId = input.messageId ?? newMessageId()
@@ -591,24 +639,25 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         messageId,
         from: ch.myAlias,
         to: input.to,
-        channel: channelName,
+        channel: channelId,
         traceId: input.traceId ?? messageId,
         replyTo: input.replyTo,
         replyBy: input.replyBy,
         hop: 0,
         contentType: input.contentType,
+        runtimeInstanceId: input.runtimeInstanceId,
         payload: input.payload,
         injectedByHuman,
         ts: nowIso(),
       }
       if (envelope.hop > HOP_LIMIT) throw new AgentCommError('HOP_EXCEEDED', 'hop limit exceeded')
 
-      const [result] = await driver.append(channelName, [envelope])
+      const [result] = await driver.append(channelId, [envelope])
       if (!result) throw new AgentCommError('CONFLICT', 'home did not acknowledge the sent message')
 
       store.messages.insert({
         messageId,
-        channel: channelName,
+        channel: channelId,
         seq: result.seq,
         from: ch.myAlias,
         to: input.to,
@@ -617,6 +666,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         replyBy: input.replyBy,
         hop: 0,
         contentType: input.contentType,
+        runtimeInstanceId: input.runtimeInstanceId,
         payload: input.payload,
         status: result.status,
         injectedByHuman,
@@ -630,11 +680,12 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
         from: ch.myAlias,
         to: input.to,
         actor,
+        runtimeInstanceId: input.runtimeInstanceId,
       })
       if (result.status === 'held') {
         // 'created'/'injected' 记录的是发送动作本身;intercept 命中是紧接着的一次状态转移,
         // 单独记一条 'held' 让发送方自己的 audit 也能看到这条消息卡住了(I6 事件表完整覆盖)。
-        appendAudit({ event: 'held', messageId, channel: channelName, from: ch.myAlias, to: input.to, actor })
+        appendAudit({ event: 'held', messageId, channel: channelId, from: ch.myAlias, to: input.to, actor })
       }
       return { messageId, status: result.status }
     },
@@ -667,10 +718,11 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       let pulled = 0
       for (const ch of channels) {
+        const channelId = channelIdOf(ch)
         try {
           const driver = await getChannelDriver(ch)
-          const after = store.syncState.get(ch.name)
-          const { messages, head } = await driver.pullAfter(ch.name, after, { limit: DEFAULT_SYNC_LIMIT })
+          const after = store.syncState.get(channelId)
+          const { messages, head } = await driver.pullAfter(channelId, after, { limit: DEFAULT_SYNC_LIMIT })
 
           for (const m of messages) {
             if (m.from === ch.myAlias) {
@@ -692,11 +744,11 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
             if (store.messages.get(m.messageId)) continue // messageId 去重(I3)
 
             if (m.replyBy !== undefined && Date.parse(m.replyBy) < Date.now()) {
-              store.messages.insert({ ...fromProtocolMessage(m, ch.name), status: 'dropped' })
+              store.messages.insert({ ...fromProtocolMessage(m, channelId), status: 'dropped' })
               appendAudit({
                 event: 'dropped',
                 messageId: m.messageId,
-                channel: ch.name,
+                channel: channelId,
                 from: m.from,
                 to: m.to,
                 actor: `agent:${ch.myAlias}`,
@@ -707,7 +759,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
 
             const ts = nowIso()
             store.messages.insert({
-              ...fromProtocolMessage(m, ch.name),
+              ...fromProtocolMessage(m, channelId),
               status: 'delivered',
               deliveredAt: ts,
             })
@@ -715,7 +767,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
             appendAudit({
               event: 'delivered',
               messageId: m.messageId,
-              channel: ch.name,
+              channel: channelId,
               from: m.from,
               to: m.to,
               actor: `agent:${ch.myAlias}`,
@@ -723,8 +775,8 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
             pulled += 1
           }
 
-          await driver.ackCursor(ch.name, identity.nodeId, head)
-          store.syncState.set(ch.name, head)
+          await driver.ackCursor(channelId, identity.nodeId, head)
+          store.syncState.set(channelId, head)
         } catch (err) {
           // 全量后台同步隔离坏频道；显式同步某频道仍返回错误，便于诊断和重试。
           if (channelFilter === undefined && isAgentCommError(err, 'HOME_UNREACHABLE')) continue
@@ -740,10 +792,11 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
       const channels = channelFilter !== undefined ? [requireChannel(channelFilter)] : store.channels.list()
       const out: HeldMessage[] = []
       for (const ch of channels) {
+        const channelId = channelIdOf(ch)
         const driver = await getChannelDriver(ch)
         let held: Message[]
         try {
-          held = await driver.listHeld(ch.name)
+          held = await driver.listHeld(channelId)
         } catch (err) {
           if (
             isAgentCommError(err, 'NOT_IMPLEMENTED') ||
@@ -753,7 +806,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           }
           throw err
         }
-        for (const m of held) out.push({ message: m, channel: ch.name })
+        for (const m of held) out.push({ message: m, channel: channelId })
       }
       return out
     },
@@ -833,9 +886,10 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
     async setChannelMode(input, actor) {
       if (actor !== 'human') throw new AgentCommError('SCOPE_DENIED', 'setChannelMode 仅限 human(I4)')
       const ch = requireChannel(input.channel)
+      const channelId = channelIdOf(ch)
       const driver = await getChannelDriver(ch)
-      await driver.setMode(input.channel, input.mode)
-      store.channels.setMode(input.channel, input.mode)
+      await driver.setMode(channelId, input.mode)
+      store.channels.setMode(channelId, input.mode)
       // 注:协议 AuditEvent 枚举没有"改模式"事件码,此动作不记 audit(见最终汇报)。
     },
 
@@ -850,6 +904,7 @@ export async function createEngine(profile: ProfilePaths, deps: EngineDeps = {})
           from: r.fromAlias,
           to: r.toTarget,
           actor: r.actor,
+          runtimeInstanceId: r.runtimeInstanceId,
           detail: r.detail,
         }))
     },

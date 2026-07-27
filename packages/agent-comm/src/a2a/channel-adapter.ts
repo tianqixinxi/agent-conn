@@ -1,19 +1,24 @@
-import type { Message as TransportMessage } from '@agent-comm/protocol'
 import {
   A2A_MEDIA_TYPE,
   type A2AEvent,
   type A2AMessage,
   A2ARole,
   A2ATaskState,
-  AgentCommError,
   createA2AMessage,
   createA2AStatusUpdate,
   encodeA2AEvent,
-  newMessageId,
   readAgentCommRouting,
   tryDecodeA2AEvent,
   withAgentCommRouting,
-} from '@agent-comm/protocol'
+} from '@agent-comm/a2a-binding'
+import {
+  type ApplicationEventSelector,
+  applicationExtensionUris,
+  readApplicationEventSelector,
+  withApplicationEventSelector,
+} from '@agent-comm/application-spec'
+import type { Message as TransportMessage } from '@agent-comm/core'
+import { AgentCommError, newMessageId } from '@agent-comm/core'
 import type { Actor, Engine, SendResult } from '../engine/api.js'
 
 export interface DelegateA2AInput {
@@ -22,6 +27,24 @@ export interface DelegateA2AInput {
   intent: string
   context?: unknown
   mediaType?: string | undefined
+}
+
+export interface PublishApplicationEventInput {
+  channel?: string | undefined
+  to: string
+  extensionUri: string
+  extensionVersion: string
+  eventType: string
+  body: unknown
+  mediaType?: string | undefined
+  contextId?: string | undefined
+}
+
+export interface RespondApplicationEventInput {
+  eventType: string
+  body: unknown
+  mediaType?: string | undefined
+  terminal?: boolean | undefined
 }
 
 export interface A2ASendResult {
@@ -45,6 +68,12 @@ export interface A2AInboundEvent {
 
 export interface A2AChannelAdapter {
   delegate(input: DelegateA2AInput, actor: Actor): Promise<A2ASendResult>
+  publish(input: PublishApplicationEventInput, actor: Actor): Promise<A2ASendResult>
+  respond(
+    incoming: TransportMessage,
+    input: RespondApplicationEventInput,
+    actor: Actor,
+  ): Promise<A2AReplyResult>
   reply(
     incoming: TransportMessage,
     response: unknown,
@@ -62,8 +91,17 @@ export interface A2AChannelAdapter {
     prompt: string,
     approval: unknown,
     actor: Actor,
-  ): Promise<{ taskId: string; update: SendResult }>
+  ): Promise<{ taskId: string; contextId: string; update: SendResult }>
+  reject(
+    incoming: TransportMessage,
+    reason: string,
+    actor: Actor,
+  ): Promise<{ taskId: string; contextId: string; update: SendResult }>
   readInbox(limit: number, channel?: string): Promise<A2AInboundEvent[]>
+}
+
+export interface A2AChannelAdapterOptions {
+  runtimeInstanceId?: string | undefined
 }
 
 function derivedTaskId(messageId: string): string {
@@ -101,7 +139,18 @@ function messageContext(incoming: TransportMessage): {
   }
 }
 
-export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
+function eventApplicationSelector(event: A2AEvent | undefined): ApplicationEventSelector | undefined {
+  if (event?.kind === 'message') return readApplicationEventSelector(event.value.metadata)
+  if (event?.kind === 'status-update') {
+    return readApplicationEventSelector(event.value.status?.message?.metadata)
+  }
+  return undefined
+}
+
+export function createA2AChannelAdapter(
+  engine: Engine,
+  options: A2AChannelAdapterOptions = {},
+): A2AChannelAdapter {
   async function resolveChannel(channel: string | undefined): Promise<string> {
     if (channel) return channel
     const who = await engine.whoami()
@@ -121,7 +170,7 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
     actor: Actor,
     statusMessage?: A2AMessage,
     metadata?: Record<string, unknown>,
-  ): Promise<{ taskId: string; update: SendResult }> {
+  ): Promise<{ taskId: string; contextId: string; update: SendResult }> {
     const { contextId, taskId } = messageContext(incoming)
     const update = createA2AStatusUpdate({ taskId, contextId, state, message: statusMessage, metadata })
     const messageId = newMessageId()
@@ -134,10 +183,57 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
         contentType: A2A_MEDIA_TYPE,
         replyTo: incoming.messageId,
         traceId: contextId,
+        runtimeInstanceId: options.runtimeInstanceId,
       },
       actor,
     )
-    return { taskId, update: result }
+    return { taskId, contextId, update: result }
+  }
+
+  async function publishApplicationEvent(
+    input: PublishApplicationEventInput,
+    actor: Actor,
+  ): Promise<A2ASendResult> {
+    const channel = await resolveChannel(input.channel)
+    const messageId = newMessageId()
+    const contextId = input.contextId ?? newMessageId()
+    const taskId = derivedTaskId(messageId)
+    const selector = {
+      uri: input.extensionUri,
+      version: input.extensionVersion,
+      eventType: input.eventType,
+    }
+    const message = createA2AMessage({
+      messageId,
+      role: 'user',
+      payload: input.body,
+      mediaType: input.mediaType ?? 'application/json',
+      contextId,
+      taskId,
+      metadata: withApplicationEventSelector(
+        withAgentCommRouting(undefined, {
+          channel,
+          to: input.to,
+          taskId,
+          runtimeInstanceId: options.runtimeInstanceId,
+        }),
+        selector,
+      ),
+      extensions: applicationExtensionUris(selector),
+    })
+    const transport = await engine.send(
+      {
+        messageId,
+        channel,
+        to: input.to,
+        payload: encodeA2AEvent({ kind: 'message', value: message }),
+        contentType: A2A_MEDIA_TYPE,
+        traceId: contextId,
+        runtimeInstanceId: options.runtimeInstanceId,
+      },
+      actor,
+    )
+    return { taskId, contextId, messageId, transport }
   }
 
   return {
@@ -160,6 +256,7 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
           channel,
           to: input.to,
           taskId,
+          runtimeInstanceId: options.runtimeInstanceId,
         }),
       })
       const transport = await engine.send(
@@ -170,10 +267,70 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
           payload: encodeA2AEvent({ kind: 'message', value: message }),
           contentType: A2A_MEDIA_TYPE,
           traceId: contextId,
+          runtimeInstanceId: options.runtimeInstanceId,
         },
         actor,
       )
       return { taskId, contextId, messageId, transport }
+    },
+
+    publish: publishApplicationEvent,
+
+    async respond(incoming, input, actor) {
+      const { event, contextId, taskId } = messageContext(incoming)
+      if (!event || (event.kind !== 'message' && event.kind !== 'status-update')) {
+        throw new AgentCommError('INVALID_INPUT', 'application responses require an A2A message event')
+      }
+      const incomingSelector = eventApplicationSelector(event)
+      if (!incomingSelector) {
+        throw new AgentCommError('INVALID_INPUT', 'event does not declare an application extension')
+      }
+      const continuingTask =
+        (event.kind === 'message' && event.value.role === A2ARole.ROLE_AGENT) ||
+        (event.kind === 'status-update' &&
+          (event.value.status?.state === A2ATaskState.TASK_STATE_INPUT_REQUIRED ||
+            event.value.status?.state === A2ATaskState.TASK_STATE_AUTH_REQUIRED))
+      const selector = { ...incomingSelector, eventType: input.eventType }
+      const responseId = newMessageId()
+      const message = createA2AMessage({
+        messageId: responseId,
+        role: continuingTask ? 'user' : 'agent',
+        payload: input.body,
+        mediaType: input.mediaType ?? 'application/json',
+        contextId,
+        taskId,
+        metadata: withApplicationEventSelector(
+          withAgentCommRouting(undefined, {
+            channel: incoming.channel,
+            to: incoming.from,
+            from: incoming.to,
+            replyTo: incoming.messageId,
+            taskId,
+            runtimeInstanceId: options.runtimeInstanceId,
+          }),
+          selector,
+        ),
+        extensions: applicationExtensionUris(selector),
+      })
+      const response = await engine.send(
+        {
+          messageId: responseId,
+          channel: incoming.channel,
+          to: incoming.from,
+          payload: encodeA2AEvent({ kind: 'message', value: message }),
+          contentType: A2A_MEDIA_TYPE,
+          replyTo: incoming.messageId,
+          traceId: contextId,
+          runtimeInstanceId: options.runtimeInstanceId,
+        },
+        actor,
+      )
+      const completion =
+        input.terminal === true
+          ? (await sendStatus(incoming, A2ATaskState.TASK_STATE_COMPLETED, actor)).update
+          : undefined
+      await engine.ack({ messageId: incoming.messageId })
+      return { taskId, contextId, response, ...(completion ? { completion } : {}) }
     },
 
     async reply(incoming, response, actor, mediaType) {
@@ -200,6 +357,7 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
           from: incoming.to,
           replyTo: incoming.messageId,
           taskId,
+          runtimeInstanceId: options.runtimeInstanceId,
         }),
       })
       const responseResult = await engine.send(
@@ -211,6 +369,7 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
           contentType: A2A_MEDIA_TYPE,
           replyTo: incoming.messageId,
           traceId: contextId,
+          runtimeInstanceId: options.runtimeInstanceId,
         },
         actor,
       )
@@ -263,6 +422,19 @@ export function createA2AChannelAdapter(engine: Engine): A2AChannelAdapter {
       const result = await sendStatus(incoming, A2ATaskState.TASK_STATE_AUTH_REQUIRED, actor, message, {
         approval,
       })
+      return result
+    },
+
+    async reject(incoming, reason, actor) {
+      const { contextId, taskId } = messageContext(incoming)
+      const message = createA2AMessage({
+        role: 'agent',
+        payload: reason,
+        mediaType: 'text/plain',
+        contextId,
+        taskId,
+      })
+      const result = await sendStatus(incoming, A2ATaskState.TASK_STATE_REJECTED, actor, message)
       await engine.ack({ messageId: incoming.messageId })
       return result
     },

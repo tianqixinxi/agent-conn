@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { AgentCommError, isValidName } from '@agent-comm/protocol'
+import { AgentCommError, isValidName } from '@agent-comm/core'
 
 /**
  * profile 解析(D1):身份 = profile(store + keypair)。

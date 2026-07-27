@@ -4,7 +4,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, rmSync, writeFileSync
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { AgentCommError, parseInviteLink } from '@agent-comm/protocol'
+import { AgentCommError, parseInviteLink } from '@agent-comm/core'
 
 const APP_NAME = 'AgentComm Launcher.app'
 const PLIST_BUDDY = '/usr/libexec/PlistBuddy'

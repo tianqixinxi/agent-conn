@@ -1,4 +1,4 @@
-import { CipherPayloadSchema } from '@agent-comm/protocol'
+import { CipherPayloadSchema } from '@agent-comm/core'
 import { open, seal } from '../crypto/e2e.js'
 import type { TransportBinding } from '../transport/api.js'
 

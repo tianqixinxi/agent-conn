@@ -10,7 +10,9 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS channels (
+  -- `name` is the opaque route identity; `channel_name` is the human alias.
   name TEXT PRIMARY KEY,
+  channel_name TEXT,
   display_name TEXT,
   mode TEXT NOT NULL DEFAULT 'auto',    -- auto|intercept|paused;门在家(§2.2)
   visibility TEXT NOT NULL DEFAULT 'private', -- private(E2E)|public(plaintext/browser-readable)

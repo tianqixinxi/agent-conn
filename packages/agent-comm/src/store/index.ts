@@ -5,5 +5,7 @@
  * 具体实现见同目录 store-repos.ts(私有 store)与 hub-repos.ts(共享 local hub)。
  * 本文件只是这两者的公开面(engine/local-home.ts 从这里 import)。
  */
+
+export * from './application-repos.js'
 export * from './hub-repos.js'
 export * from './store-repos.js'

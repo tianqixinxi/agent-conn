@@ -1,3 +1,9 @@
+import {
+  AGENTCOMM_APPLICATION_EXTENSION_URI,
+  applicationExtensionUris,
+  readApplicationEventSelector,
+  withApplicationEventSelector,
+} from '@agent-comm/application-spec'
 import type { Message } from '@agent-comm/protocol'
 import {
   A2A_MEDIA_TYPE,
@@ -39,7 +45,7 @@ describe('A2A channel adapter', () => {
     const engine = new FakeEngine({
       memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
     })
-    const adapter = createA2AChannelAdapter(engine)
+    const adapter = createA2AChannelAdapter(engine, { runtimeInstanceId: 'r-test-runtime-001' })
 
     const result = await adapter.delegate(
       { to: 'alice', intent: 'review', context: { target: 'change-42' } },
@@ -54,6 +60,7 @@ describe('A2A channel adapter', () => {
       to: 'alice',
       contentType: A2A_MEDIA_TYPE,
       traceId: result.contextId,
+      runtimeInstanceId: 'r-test-runtime-001',
     })
     expect(event?.kind).toBe('message')
     if (event?.kind !== 'message') throw new Error('expected message')
@@ -63,8 +70,102 @@ describe('A2A channel adapter', () => {
         channel: 'duet',
         to: 'alice',
         taskId: result.taskId,
+        runtimeInstanceId: 'r-test-runtime-001',
       },
     })
+  })
+
+  it('publishes an opaque community application event over A2A', async () => {
+    const engine = new FakeEngine({
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    const adapter = createA2AChannelAdapter(engine)
+    const extensionUri = 'https://community.example/repository-maintenance'
+
+    const result = await adapter.publish(
+      {
+        to: 'alice',
+        extensionUri,
+        extensionVersion: '1.2.0',
+        eventType: 'work.requested',
+        body: { goal: 'review README' },
+      },
+      'agent:bob',
+    )
+
+    const sent = sentInputs(engine)[0]
+    const event = tryDecodeA2AEvent(sent?.payload)
+    expect(sent).toMatchObject({
+      messageId: result.messageId,
+      channel: 'duet',
+      to: 'alice',
+      contentType: A2A_MEDIA_TYPE,
+    })
+    expect(event?.kind).toBe('message')
+    if (event?.kind !== 'message') throw new Error('expected message')
+    expect(readApplicationEventSelector(event.value.metadata)).toEqual({
+      uri: extensionUri,
+      version: '1.2.0',
+      eventType: 'work.requested',
+    })
+    expect(event.value.extensions).toEqual(
+      expect.arrayContaining([
+        AGENTCOMM_APPLICATION_EXTENSION_URI,
+        extensionUri,
+        'https://agentcomm.dev/extensions/private-channel/v1',
+      ]),
+    )
+  })
+
+  it('responds within the same application protocol without making the relay interpret it', async () => {
+    const extensionUri = 'https://community.example/repository-maintenance'
+    const selector = {
+      uri: extensionUri,
+      version: '1.2.0',
+      eventType: 'work.requested',
+    }
+    const original = createA2AMessage({
+      messageId: 'a2a-app-in-1',
+      role: 'user',
+      payload: { goal: 'review README' },
+      contextId: 'context-app',
+      taskId: 'task-app',
+      metadata: withApplicationEventSelector(undefined, selector),
+      extensions: applicationExtensionUris(selector),
+    })
+    const incoming = transportMessage({
+      contentType: A2A_MEDIA_TYPE,
+      payload: encodeA2AEvent({ kind: 'message', value: original }),
+    })
+    const engine = new FakeEngine()
+    const adapter = createA2AChannelAdapter(engine)
+
+    const result = await adapter.respond(
+      incoming,
+      {
+        eventType: 'work.completed',
+        body: { summary: 'three points' },
+        terminal: true,
+      },
+      'agent:bob',
+    )
+
+    const sent = sentInputs(engine)
+    expect(sent).toHaveLength(2)
+    const response = tryDecodeA2AEvent(sent[0]?.payload)
+    const completion = tryDecodeA2AEvent(sent[1]?.payload)
+    expect(response?.kind).toBe('message')
+    if (response?.kind !== 'message') throw new Error('expected message')
+    expect(response.value.contextId).toBe('context-app')
+    expect(response.value.taskId).toBe('task-app')
+    expect(readApplicationEventSelector(response.value.metadata)).toEqual({
+      uri: extensionUri,
+      version: '1.2.0',
+      eventType: 'work.completed',
+    })
+    expect(completion?.kind).toBe('status-update')
+    expect(result.completion).toBeDefined()
+    expect(engine.calls.find((call) => call.method === 'ack')).toBeDefined()
   })
 
   it('replies to delegated work with an agent message, COMPLETED update, then ACKs', async () => {
@@ -114,7 +215,7 @@ describe('A2A channel adapter', () => {
     expect(result.completion).toBeUndefined()
   })
 
-  it('suspends work for approval with AUTH_REQUIRED and ACKs the triggering event', async () => {
+  it('suspends work for authorization without consuming the original task event', async () => {
     const original = createA2AMessage({
       messageId: 'a2a-in-1',
       role: 'user',
@@ -143,6 +244,6 @@ describe('A2A channel adapter', () => {
     expect(event.value.metadata).toEqual({
       approval: { action: 'deploy', environment: 'production' },
     })
-    expect(engine.calls.find((call) => call.method === 'ack')).toBeDefined()
+    expect(engine.calls.find((call) => call.method === 'ack')).toBeUndefined()
   })
 })

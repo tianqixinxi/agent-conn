@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { BlockList, isIP } from 'node:net'
-import { AgentCommError } from '@agent-comm/protocol'
+import { AgentCommError } from '@agent-comm/core'
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 30_000

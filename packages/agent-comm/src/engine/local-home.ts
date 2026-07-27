@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { AgentCard, Message, MessageEnvelope, MsgStatus } from '@agent-comm/protocol'
-import { AgentCommError, newJoinToken, nowIso } from '@agent-comm/protocol'
+import type { AgentCard, Message, MessageEnvelope, MsgStatus } from '@agent-comm/core'
+import { AgentCommError, newJoinToken, nowIso } from '@agent-comm/core'
 import type { HubMemberRow, HubMessageRow } from '../store/index.js'
 import { openHubDb } from '../store/index.js'
 import type { TransportBinding } from '../transport/api.js'
@@ -43,13 +43,15 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
     home,
 
     async createChannel(input) {
+      const channelId = input.channelId ?? input.name
       return hub.withTx(() => {
-        if (hub.channels.get(input.name)) {
-          throw new AgentCommError('CHANNEL_EXISTS', `channel already exists: ${input.name}`)
+        if (hub.channels.get(channelId)) {
+          throw new AgentCommError('CHANNEL_EXISTS', `channel already exists: ${channelId}`)
         }
         const createdAt = nowIso()
         hub.channels.insert({
-          name: input.name,
+          name: channelId,
+          channelName: input.name,
           displayName: input.displayName,
           mode: input.mode ?? 'auto',
           visibility: input.visibility ?? 'private',
@@ -57,7 +59,7 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
           createdAt,
         })
         hub.members.insert({
-          channel: input.name,
+          channel: channelId,
           alias: input.member.alias,
           nodeId: input.member.nodeId,
           publicKey: input.member.publicKey,
@@ -89,6 +91,8 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
           const members = hub.members.list(channel)
           return {
             channel,
+            channelId: channel,
+            name: chRow.channelName,
             mode: chRow.mode,
             visibility: chRow.visibility,
             members: members.map(toMemberOut),
@@ -127,6 +131,8 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
         const members = hub.members.list(channel)
         return {
           channel,
+          channelId: channel,
+          name: chRow.channelName,
           mode: chRow.mode,
           visibility: chRow.visibility,
           members: members.map(toMemberOut),
@@ -151,6 +157,8 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
           )
           return {
             channel: input.channel,
+            channelId: input.channel,
+            name: chRow.channelName,
             mode: chRow.mode,
             visibility: chRow.visibility,
             members: hub.members.list(input.channel).map(toMemberOut),
@@ -179,6 +187,8 @@ export async function openLocalHome(hubPath: string): Promise<TransportBinding> 
         })
         return {
           channel: input.channel,
+          channelId: input.channel,
+          name: chRow.channelName,
           mode: chRow.mode,
           visibility: chRow.visibility,
           members: hub.members.list(input.channel).map(toMemberOut),

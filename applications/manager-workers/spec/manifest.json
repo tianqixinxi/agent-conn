@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1",
+  "uri": "https://agentcomm.dev/community/manager-workers/v1",
+  "name": "Manager and workers",
+  "version": "1.0.0",
+  "description": "Coordinates assignment, progress, suspension, completion, and review across a manager and workers.",
+  "license": "Apache-2.0",
+  "baseProtocol": "a2a/1.0",
+  "mediaTypes": ["application/json"],
+  "documentation": "https://agentcomm.dev/community/manager-workers/v1/",
+  "conformanceFixtures": "https://agentcomm.dev/community/manager-workers/v1/conformance.json",
+  "compatibility": {
+    "major": 1,
+    "backwardCompatibleFrom": "1.0.0"
+  },
+  "eventSchemas": {
+    "team.started": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/teamStarted"
+    },
+    "worker.registered": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/workerRegistered"
+    },
+    "task.requested": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskRequested"
+    },
+    "task.assigned": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskAssigned"
+    },
+    "task.progress": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskProgress"
+    },
+    "task.input-required": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskSuspended"
+    },
+    "task.authorization-required": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskSuspended"
+    },
+    "task.completed": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskCompleted"
+    },
+    "task.failed": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/taskFailed"
+    },
+    "review.requested": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/review"
+    },
+    "review.changes-requested": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/review"
+    },
+    "review.approved": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json#/$defs/review"
+    }
+  }
+}

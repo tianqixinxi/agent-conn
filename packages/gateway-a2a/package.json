@@ -1,0 +1,15 @@
+{
+  "name": "@agent-comm/gateway-a2a",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-comm/a2a-binding": "workspace:*",
+    "@agent-comm/core": "workspace:*",
+    "@agent-comm/delivery": "workspace:*"
+  }
+}

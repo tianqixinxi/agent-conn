@@ -16,8 +16,22 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@agent-comm/application-spec": ["packages/application-spec/src/index.ts"],
+      "@agent-comm/a2a-binding": ["packages/a2a-binding/src/index.ts"],
+      "@agent-comm/client-sdk": ["packages/client-sdk/src/index.ts"],
+      "@agent-comm/core": ["packages/core/src/index.ts"],
+      "@agent-comm/delivery": ["packages/delivery/src/index.ts"],
+      "@agent-comm/gateway-a2a": ["packages/gateway-a2a/src/index.ts"],
+      "@agent-comm/harness-claude-code": ["packages/harness-claude-code/src/index.ts"],
+      "@agent-comm/manager-workers": ["applications/manager-workers/src/index.ts"],
       "@agent-comm/protocol": ["packages/protocol/src/index.ts"]
     }
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "applications/*/src/**/*.ts",
+    "applications/*/test/**/*.ts",
+    "vitest.config.ts"
+  ]
 }

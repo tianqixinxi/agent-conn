@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS hub_meta (
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS hub_channels (
+  -- `name` remains the opaque route identity for compatibility with the original schema.
   name TEXT PRIMARY KEY,
+  channel_name TEXT,
   display_name TEXT,
   mode TEXT NOT NULL DEFAULT 'auto',   -- auto|intercept|paused;门在家(§2.2)
   visibility TEXT NOT NULL DEFAULT 'private',

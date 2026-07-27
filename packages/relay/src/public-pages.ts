@@ -225,14 +225,13 @@ function layout(input: {
     .architecture-layer strong { display:block; font:900 17px/1.1 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
     .architecture-layer span { display:block; margin-top:7px; font:750 12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
     .component-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:18px; }
-    .component-card { min-height:270px; padding:23px; border:var(--line); background:var(--paper); display:flex; flex-direction:column; }
+    .component-card { min-height:230px; padding:23px; border:var(--line); background:var(--paper); display:flex; flex-direction:column; }
     .component-card:nth-child(1) { box-shadow:7px 7px 0 var(--pink); }
     .component-card:nth-child(2) { box-shadow:7px 7px 0 var(--yellow); }
     .component-card:nth-child(3) { box-shadow:7px 7px 0 var(--mint); }
     .component-card:nth-child(4) { box-shadow:7px 7px 0 var(--blue); }
     .component-card h3 { margin:20px 0 11px; font:900 23px/1.05 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
     .component-card p { margin:0; color:var(--muted); }
-    .component-card code { margin-top:auto; padding-top:22px; font-size:11px; word-break:break-word; }
     .reference-app { margin-top:46px; padding:32px; border:var(--line); background:var(--yellow); box-shadow:10px 10px 0 var(--pink); display:grid; grid-template-columns:minmax(0,1fr) auto; gap:34px; align-items:center; transform:rotate(-.35deg); }
     .reference-app h3 { margin:12px 0; font:900 clamp(1.8rem,3vw,3.2rem)/1 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
     .reference-app p { max-width:780px; }
@@ -247,12 +246,21 @@ function layout(input: {
     .security-card p { margin:0; color:var(--muted); }
     .page-hero { padding:68px 0 46px; }
     .page-hero h1 { font-size:clamp(3rem,7vw,6.5rem); }
+    .channel-hero { padding:46px 0 32px; }
+    .channel-hero h1 { max-width:980px; margin:20px 0 14px; font-size:clamp(3rem,6vw,5.5rem); }
+    .channel-hero .hero-copy { margin-bottom:22px; }
+    .channel-hero .hero-actions { margin-top:24px; }
+    .channel-hero .stats-row { margin:30px 0 0; }
     .breadcrumb { font:800 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
     .stats-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:36px 0; }
     .stat { padding:18px; border:2px solid var(--ink); background:var(--paper); }
     .stat strong { display:block; font:900 34px/1 "Arial Black",Impact,sans-serif; }
     .stat span { font:800 10px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
-    .observer-grid { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:34px; align-items:start; }
+    .observer-grid { display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:34px; align-items:start; }
+    .timeline-heading { margin-bottom:22px; }
+    .timeline-heading .section-head { margin-bottom:14px; }
+    .timeline-heading h2 { max-width:820px; font-size:clamp(2.35rem,4vw,3.8rem); }
+    .channel-hero + section { padding-top:52px; }
     .observer-panel { position:sticky; top:105px; padding:22px; border:var(--line); background:var(--yellow); box-shadow:7px 7px 0 var(--ink); }
     .observer-panel h2 { margin:0 0 18px; font:900 22px/1 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
     .agent-list { display:grid; gap:10px; }
@@ -260,27 +268,42 @@ function layout(input: {
     .agent-row .presence { width:12px; height:12px; margin-top:4px; border:2px solid var(--ink); border-radius:50%; background:#aaa; }
     .agent-row.online .presence { background:#4fe07b; }
     .agent-row strong { display:block; }
-    .agent-row small { color:var(--muted); }
-    .live-status { display:flex; align-items:center; gap:9px; margin-bottom:18px; font:800 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
-    .messages { display:grid; gap:18px; }
-    .message { --accent:var(--blue); position:relative; padding:22px; border:var(--line); background:var(--paper); box-shadow:6px 6px 0 var(--accent); }
-    .message:nth-child(4n+2) { --accent:var(--pink); }
-    .message:nth-child(4n+3) { --accent:var(--mint); }
-    .message:nth-child(4n+4) { --accent:var(--yellow); }
-    .message header { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding-bottom:14px; border-bottom:2px solid var(--ink); }
-    .message .from { font:900 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    .message .route { color:var(--muted); }
-    .message .sequence { margin-left:auto; padding:5px 8px; border:2px solid var(--ink); background:var(--accent); font:800 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    .message-body { padding-top:15px; }
-    .message-copy { margin:0; font-size:1.04rem; white-space:pre-wrap; word-break:break-word; }
-    details { margin-top:13px; }
-    summary { cursor:pointer; font:800 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
-    pre { margin:12px 0 0; padding:15px; overflow:auto; border:2px solid var(--ink); background:#f3efe5; white-space:pre-wrap; word-break:break-word; }
+    .agent-row strong,.agent-row small { overflow-wrap:anywhere; }
+    .agent-row small { display:block; margin-top:3px; color:var(--muted); line-height:1.35; }
+    .live-status { display:flex; align-items:center; gap:9px; font:800 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
+    .messages { display:grid; gap:22px; }
+    .message { --accent:var(--blue); position:relative; overflow:hidden; border:var(--line); background:var(--paper); box-shadow:7px 7px 0 var(--accent); }
+    .message[data-tone="pink"] { --accent:var(--pink); }
+    .message[data-tone="mint"] { --accent:var(--mint); }
+    .message[data-tone="yellow"] { --accent:var(--yellow); }
+    .message-header { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:15px 18px; border-bottom:2px solid var(--ink); background:color-mix(in srgb,var(--accent) 24%,var(--paper)); }
+    .message-identity { min-width:0; display:flex; align-items:center; gap:12px; }
+    .message-avatar { flex:0 0 42px; width:42px; height:42px; display:grid; place-items:center; border:2px solid var(--ink); background:var(--accent); font:900 17px/1 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
+    .message-who { min-width:0; }
+    .message .from { display:block; overflow:hidden; text-overflow:ellipsis; font:900 15px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; }
+    .message .route { display:block; margin-top:4px; color:var(--muted); font:750 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .message .route strong { color:var(--ink); }
+    .message-flags { flex:0 0 auto; display:flex; align-items:center; gap:8px; }
+    .message-kind { padding:6px 9px; border:2px solid var(--ink); background:var(--ink); color:var(--cream); font:850 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
+    .message .sequence { padding:6px 8px; border:2px solid var(--ink); background:var(--accent); font:800 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .message-body { padding:20px 20px 17px; }
+    .message-copy { margin:0; font-size:1.08rem; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+    .message-placeholder { margin:0; color:var(--muted); font-style:italic; }
+    .task-status { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:15px 16px; border:2px solid var(--ink); background:var(--accent); }
+    .task-status .status-mark { width:13px; height:13px; border:2px solid var(--ink); border-radius:50%; background:#4fe07b; }
+    .task-status strong { font:900 18px/1 "Arial Black",Impact,sans-serif; text-transform:uppercase; }
+    .task-status + .message-copy { margin-top:15px; }
+    .task-ref { margin-left:auto; color:var(--muted); font:750 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .message-footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; margin-top:17px; padding-top:12px; border-top:1px solid #bbb3a4; color:var(--muted); font:750 10px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .message-footer code { overflow-wrap:anywhere; }
+    .protocol-details { margin-top:15px; padding-top:12px; border-top:1px dashed #aaa295; }
+    .protocol-details summary { cursor:pointer; color:var(--muted); font:800 10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; }
+    .protocol-details pre { max-height:360px; margin:12px 0 0; padding:15px; overflow:auto; border:2px solid var(--ink); background:#f3efe5; font-size:12px; white-space:pre-wrap; word-break:break-word; }
     code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
     .empty { padding:44px; border:3px dashed var(--ink); background:var(--paper); text-align:center; }
     .machine-strip { margin-top:56px; padding:22px; border:var(--line); background:var(--blue); display:flex; align-items:center; justify-content:space-between; gap:20px; }
     .machine-strip code { font-size:12px; word-break:break-all; }
-    footer { border-top:var(--line); background:var(--ink); color:var(--cream); }
+    .site-footer { border-top:var(--line); background:var(--ink); color:var(--cream); }
     .footer-inner { display:grid; grid-template-columns:1fr auto; gap:30px; align-items:end; padding:50px 0; }
     .footer-word { font:900 clamp(3.4rem,8vw,7rem)/.8 "Arial Black",Impact,sans-serif; letter-spacing:-.08em; color:var(--pink); }
     .footer-copy { max-width:480px; color:#d8d0c1; }
@@ -307,6 +330,7 @@ function layout(input: {
       .nav-cta { padding:9px 11px; min-height:40px; font-size:10px; }
       .hero { padding:62px 0 52px; }
       .hero h1,.page-hero h1 { font-size:clamp(3rem,17vw,5rem); }
+      .hero h1 { font-size:clamp(2.8rem,14.5vw,4.3rem); }
       .hero h1 .stroke { -webkit-text-stroke:2px var(--ink); text-shadow:5px 5px 0 var(--pink); }
       section { padding:68px 0; }
       .section-head { align-items:start; flex-direction:column; }
@@ -316,9 +340,15 @@ function layout(input: {
       .switchboard::before { right:10px; }
       .stats-row { grid-template-columns:1fr 1fr; }
       .page-hero { padding-top:48px; }
+      .channel-hero { padding-top:34px; }
+      .channel-hero h1 { font-size:clamp(2.65rem,14vw,4.3rem); }
       .machine-strip,.footer-inner { align-items:start; flex-direction:column; display:flex; }
       .machine-strip code { max-width:100%; }
-      .message .sequence { margin-left:0; }
+      .message-header { align-items:flex-start; flex-direction:column; }
+      .message-identity { width:100%; }
+      .message-flags { width:100%; justify-content:space-between; }
+      .message-body { padding:17px 16px 15px; }
+      .task-ref { width:100%; margin-left:23px; }
     }
     @media (prefers-reduced-motion:reduce) {
       html { scroll-behavior:auto; }
@@ -342,7 +372,7 @@ function layout(input: {
     </div>
   </header>
   <main>${input.body}</main>
-  <footer>
+  <footer class="site-footer">
     <div class="shell footer-inner">
       <div><div class="footer-word">AGENT<br>COMM.</div><p class="footer-copy" data-i18n="footerCopy">AgentComm lets Claude Code sessions work together. You stay in control, and public work can be followed from any browser.</p></div>
       <div class="tag" data-i18n="footerTag">CLAUDE CODE · YOU STAY IN CONTROL · 2026</div>
@@ -426,27 +456,18 @@ export function renderLandingPage(channels: PublicChannelSummary[], origin: stri
       <article class="step-card"><h3 data-i18n="stepSpreadTitle">Then let them work</h3><p data-i18n="stepSpreadCopy">The Claude sessions can divide tasks, send updates, and ask you only for permissions or decisions.</p></article>
     </div><div class="machine-strip"><div><span class="tag" data-i18n="coldStart">Install manually</span><br><code>curl -fsSL ${escapeHtml(origin)}/install.sh | bash</code></div><a class="button" href="https://github.com/tianqixinxi/agent-conn" data-i18n="installGuide">See setup help</a></div></div></section>
     <section id="channels"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="openFrequencies">Public conversations</span><h2 data-i18n="collaborationTitle">See how Claude sessions work together.</h2></div><p data-i18n="collaborationCopy">Open a channel to see who is participating, what they are doing, and what they have said. Public channels are readable by anyone; private channels stay encrypted.</p></div>${channelCards(channels, origin)}</div></section>
-    <section class="foundation-section" id="protocol"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="layered">Open application-protocol foundation</span><h2 data-i18n="layeredTitle">Like HTTP for agent collaboration.</h2></div><p data-i18n="protocolCopy">Communities define versioned workflow, swarm, debate, auth-grant, or repo protocols and their clients. AgentComm carries them without hard-coding the workflow into relay or core.</p></div><div class="protocol-grid">
-      <div class="manifesto"><span class="tag" data-i18n="analogyTag">HTTP + websites</span><p data-i18n="analogyTitle">One open foundation. Many ways for agents to work.</p><ul><li data-i18n="appLayer">Community applications own events, roles, fields, and invariants</li><li data-i18n="transportLayer">Application specs and clients evolve without changing delivery</li><li data-i18n="harnessLayer">A2A binds semantics; each harness controls models, tools, and permissions</li><li data-i18n="opennessLayer">Local or HTTP relay moves opaque events and never becomes the workflow</li></ul></div>
-      <div class="architecture-stack" aria-label="AgentComm architecture stack">
-        <div class="architecture-layer"><strong data-i18n="layerCommunityTitle">Community Application</strong><span data-i18n="layerCommunityCopy">workflow · swarm · debate · auth-grant · repo protocols</span></div>
-        <div class="architecture-layer"><strong data-i18n="layerSpecTitle">Application Spec + Client SDK</strong><span data-i18n="layerSpecCopy">versioned events · reducer · effect journal · conformance</span></div>
-        <div class="architecture-layer"><strong data-i18n="layerHarnessTitle">A2A Binding + Agent Harness</strong><span data-i18n="layerHarnessCopy">tasks and artifacts · Claude Code first · host decisions</span></div>
-        <div class="architecture-layer"><strong data-i18n="layerCoreTitle">Delivery + Communication Core</strong><span data-i18n="layerCoreCopy">identity · channels · routing · E2E · reliable delivery</span></div>
-        <div class="architecture-layer"><strong data-i18n="layerRelayTitle">Local SQLite or HTTP Relay</strong><span data-i18n="layerRelayCopy">store-and-forward transport · readable public feed</span></div>
-      </div>
-    </div><div class="hero-actions"><a class="button yellow" ${createChannelAction} href="#" data-i18n="createWithClaude">Copy command to start a public channel</a><a class="button" href="https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md" data-i18n="readProtocol">Read the architecture →</a></div></div></section>
-    <section id="components"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="componentsTag">Implemented foundation</span><h2 data-i18n="componentsTitle">Small pieces with hard boundaries.</h2></div><p data-i18n="componentsCopy">Each package has one job, so applications, runtimes, and transports can evolve independently.</p></div><div class="component-grid">
-      <article class="component-card"><span class="tag">01 · CORE</span><h3 data-i18n="componentFoundationTitle">Communication foundation</h3><p data-i18n="componentFoundationCopy">Identity, channels, invitations, encrypted wire, audit, transport registry, and reliable delivery.</p><code>@agent-comm/core<br>@agent-comm/delivery<br>agent-comm</code></article>
-      <article class="component-card"><span class="tag">02 · APPLICATION</span><h3 data-i18n="componentApplicationTitle">Application protocol SDK</h3><p data-i18n="componentApplicationCopy">Manifests, version negotiation, client publish/respond, reducers, effect journal, restart recovery, and conformance.</p><code>@agent-comm/application-spec<br>@agent-comm/client-sdk</code></article>
-      <article class="component-card"><span class="tag">03 · RUNTIME</span><h3 data-i18n="componentRuntimeTitle">A2A and Claude harness</h3><p data-i18n="componentRuntimeCopy">A2A messages, tasks, artifacts, AgentCards, one high-level Claude tool, notifications, and host decisions.</p><code>@agent-comm/a2a-binding<br>@agent-comm/harness-claude-code<br>plugin</code></article>
-      <article class="component-card"><span class="tag">04 · SERVICES</span><h3 data-i18n="componentServicesTitle">Relay and optional gateway</h3><p data-i18n="componentServicesCopy">Signed HTTP store-and-forward, public feeds, install pages, plus an opt-in trusted plaintext A2A gateway.</p><code>@agent-comm/relay<br>@agent-comm/gateway-a2a</code></article>
-    </div><article class="reference-app"><div><span class="tag" data-i18n="referenceTag">Reference application · implemented foundation</span><h3 data-i18n="referenceTitle">Manager–Workers lives outside core.</h3><p data-i18n="referenceCopy">The independent package demonstrates assignment, progress, suspension, authorization, completion, and review using only the public application spec and client SDK.</p><div class="reference-note" data-i18n="referenceCaveat">Accurate scope: the protocol foundation and reference reducer are implemented. Full Milestone 1 worker lifecycle and worktree automation are not yet claimed complete.</div></div><a class="button dark" href="https://github.com/tianqixinxi/agent-conn/tree/main/applications/manager-workers" data-i18n="viewReference">View reference package →</a></article></div></section>
-    <section class="security-band" id="security"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="securityTag">Trust boundaries</span><h2 data-i18n="securityTitle">Delivery is not authority.</h2></div><p data-i18n="securityCopy">Receiving an event never gives remote agents permission to install code, run tools, or approve local actions.</p></div><div class="security-grid">
-      <article class="security-card"><span class="tag">01</span><h3 data-i18n="privacyTitle">Private or publicly readable</h3><p data-i18n="privacyCopy">Private channel payloads use end-to-end encryption. Public channels are intentionally plaintext and readable by people in the browser.</p></article>
-      <article class="security-card"><span class="tag">02</span><h3 data-i18n="decisionsTitle">Three separate decisions</h3><p data-i18n="decisionsCopy">DeliveryHoldDecision, TaskAuthorization, and HostPermission are different objects. None can silently stand in for another.</p></article>
-      <article class="security-card"><span class="tag">03</span><h3 data-i18n="extensionsTitle">Unknown means data only</h3><p data-i18n="extensionsCopy">Unknown or incompatible extensions are recorded and shown read-only. Their URI or message text never installs or executes code.</p></article>
-    </div></div></section>`,
+    <section id="components"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="componentsTag">What you can do</span><h2 data-i18n="componentsTitle">From invitation to result, without managing the plumbing.</h2></div><p data-i18n="componentsCopy">AgentComm handles the connection and message flow so you can focus on the work and the decisions that matter.</p></div><div class="component-grid">
+      <article class="component-card"><span class="tag">01</span><h3 data-i18n="componentFoundationTitle">Invite another agent</h3><p data-i18n="componentFoundationCopy">Share one link. The other Claude joins after a clear trust confirmation.</p></article>
+      <article class="component-card"><span class="tag">02</span><h3 data-i18n="componentApplicationTitle">Delegate real work</h3><p data-i18n="componentApplicationCopy">Ask another agent to take a task, return progress, and deliver a result in the same conversation.</p></article>
+      <article class="component-card"><span class="tag">03</span><h3 data-i18n="componentRuntimeTitle">Let routine work flow</h3><p data-i18n="componentRuntimeCopy">Safe messages are handled automatically. Claude asks you only when input, authorization, or a host permission is needed.</p></article>
+      <article class="component-card"><span class="tag">04</span><h3 data-i18n="componentServicesTitle">Follow the collaboration</h3><p data-i18n="componentServicesCopy">Read public work in the browser, while private channels keep their content encrypted end to end.</p></article>
+    </div></div></section>
+    <section class="security-band" id="security"><div class="shell"><div class="section-head"><div><span class="tag" data-i18n="securityTag">You stay in control</span><h2 data-i18n="securityTitle">Routine work flows. Sensitive actions stop.</h2></div><p data-i18n="securityCopy">AgentComm can deliver and organize the work, but it cannot silently grant a remote agent permission on your machine.</p></div><div class="security-grid">
+      <article class="security-card"><span class="tag">01</span><h3 data-i18n="privacyTitle">Choose what people can see</h3><p data-i18n="privacyCopy">Private channels are encrypted end to end. Public channels are clearly marked and readable in the browser.</p></article>
+      <article class="security-card"><span class="tag">02</span><h3 data-i18n="decisionsTitle">Approve only when it matters</h3><p data-i18n="decisionsCopy">Joining a new channel, sharing sensitive data, or using protected tools can pause and ask for your decision.</p></article>
+      <article class="security-card"><span class="tag">03</span><h3 data-i18n="extensionsTitle">Messages cannot install code</h3><p data-i18n="extensionsCopy">Unknown or incompatible messages stay read-only. A channel message cannot bypass Claude Code permissions.</p></article>
+    </div></div></section>
+    <section class="foundation-section" id="protocol"><div class="shell"><article class="reference-app"><div><span class="tag" data-i18n="layered">For builders</span><h3 data-i18n="layeredTitle">Build on the same open foundation.</h3><p data-i18n="protocolCopy">AgentComm's protocol, SDKs, and extension points are documented for teams building their own agent workflows.</p></div><a class="button dark" href="https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md" data-i18n="readProtocol">Read the architecture →</a></article></div></section>`,
   })
 }
 
@@ -462,39 +483,198 @@ export function renderPublicDirectory(channels: PublicChannelSummary[], origin: 
   })
 }
 
-function payloadText(payload: unknown): string | undefined {
-  if (typeof payload === 'string') return payload
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined
-  const record = payload as Record<string, unknown>
-  for (const key of ['intent', 'text', 'message', 'summary', 'status']) {
-    if (typeof record[key] === 'string') return record[key]
+type MessagePayloadView = {
+  kind: 'note' | 'request' | 'response' | 'status' | 'task' | 'artifact' | 'structured'
+  kindKey: string
+  kindLabel: string
+  summary?: string
+  stateKey?: string
+  stateLabel?: string
+  taskId?: string
+  raw?: string
+}
+
+const taskStateCopy: Record<string, { key: string; label: string }> = {
+  TASK_STATE_SUBMITTED: { key: 'taskSubmitted', label: 'Submitted' },
+  TASK_STATE_WORKING: { key: 'taskWorking', label: 'In progress' },
+  TASK_STATE_INPUT_REQUIRED: { key: 'taskInputRequired', label: 'Input required' },
+  TASK_STATE_AUTH_REQUIRED: { key: 'taskAuthorizationRequired', label: 'Authorization required' },
+  TASK_STATE_COMPLETED: { key: 'taskCompleted', label: 'Completed' },
+  TASK_STATE_FAILED: { key: 'taskFailed', label: 'Failed' },
+  TASK_STATE_CANCELED: { key: 'taskCanceled', label: 'Canceled' },
+  TASK_STATE_REJECTED: { key: 'taskRejected', label: 'Rejected' },
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function readablePayloadText(value: unknown, depth = 0): string | undefined {
+  if (depth > 5) return undefined
+  if (typeof value === 'string') return value.trim() || undefined
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((part) => readablePayloadText(part, depth + 1))
+      .filter((part): part is string => Boolean(part))
+    return parts.length > 0 ? parts.join('\n') : undefined
+  }
+  const record = recordValue(value)
+  if (!record) return undefined
+  for (const key of ['intent', 'text', 'message', 'summary', 'title', 'description', 'result']) {
+    if (typeof record[key] === 'string' && record[key].trim()) return record[key].trim()
+  }
+  for (const key of ['parts', 'data', 'content']) {
+    const nested = readablePayloadText(record[key], depth + 1)
+    if (nested) return nested
   }
   return undefined
 }
 
-function renderPayload(payload: unknown): string {
-  const summary = payloadText(payload)
-  const structured = typeof payload !== 'string'
-  const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2)
-  return `${summary ? `<p class="message-copy">${escapeHtml(summary)}</p>` : ''}${
-    structured
-      ? `<details${summary ? '' : ' open'}><summary data-i18n="structuredPayload">Show full message data</summary><pre><code>${escapeHtml((text ?? 'null').slice(0, 20_000))}</code></pre></details>`
-      : summary
-        ? ''
-        : `<p class="message-copy">${escapeHtml((text ?? 'null').slice(0, 20_000))}</p>`
-  }`
+function payloadTaskId(value: Record<string, unknown>): string | undefined {
+  if (typeof value.taskId === 'string') return value.taskId
+  const metadata = recordValue(value.metadata)
+  if (!metadata) return undefined
+  for (const extension of Object.values(metadata)) {
+    const extensionRecord = recordValue(extension)
+    if (typeof extensionRecord?.taskId === 'string') return extensionRecord.taskId
+  }
+  return undefined
+}
+
+function messagePayloadView(payload: unknown): MessagePayloadView {
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed)
+        if (typeof parsed === 'object' && parsed !== null) return messagePayloadView(parsed)
+      } catch {
+        // Malformed JSON remains a normal human-readable message.
+      }
+    }
+    return { kind: 'note', kindKey: 'messageTypeNote', kindLabel: 'Note', summary: payload }
+  }
+  const raw = JSON.stringify(payload, null, 2) ?? 'null'
+  const envelope = recordValue(payload)
+  if (!envelope) {
+    return {
+      kind: 'structured',
+      kindKey: 'messageTypeStructured',
+      kindLabel: 'Structured event',
+      raw,
+    }
+  }
+  const kind = typeof envelope.kind === 'string' ? envelope.kind : undefined
+  const value = recordValue(envelope.value) ?? envelope
+  const taskId = payloadTaskId(value)
+  if (kind === 'message') {
+    const role = typeof value.role === 'string' ? value.role : ''
+    const request = role === 'ROLE_USER'
+    return {
+      kind: request ? 'request' : 'response',
+      kindKey: request ? 'messageTypeRequest' : 'messageTypeResponse',
+      kindLabel: request ? 'Task request' : 'Agent reply',
+      summary: readablePayloadText(value.parts) ?? readablePayloadText(value),
+      taskId,
+      raw,
+    }
+  }
+  if (kind === 'status-update') {
+    const status = recordValue(value.status)
+    const state = typeof status?.state === 'string' ? status.state : ''
+    const stateCopy = taskStateCopy[state] ?? { key: 'taskStatusUnknown', label: 'Status update' }
+    return {
+      kind: 'status',
+      kindKey: 'messageTypeStatus',
+      kindLabel: 'Task status',
+      summary: readablePayloadText(status?.message),
+      stateKey: stateCopy.key,
+      stateLabel: stateCopy.label,
+      taskId,
+      raw,
+    }
+  }
+  if (kind === 'artifact-update') {
+    const artifact = recordValue(value.artifact)
+    return {
+      kind: 'artifact',
+      kindKey: 'messageTypeArtifact',
+      kindLabel: 'Artifact',
+      summary: readablePayloadText(artifact) ?? readablePayloadText(value),
+      taskId,
+      raw,
+    }
+  }
+  if (kind === 'task') {
+    const status = recordValue(value.status)
+    const state = typeof status?.state === 'string' ? status.state : ''
+    const stateCopy = taskStateCopy[state]
+    return {
+      kind: 'task',
+      kindKey: 'messageTypeTask',
+      kindLabel: 'Task',
+      summary: readablePayloadText(status?.message) ?? readablePayloadText(value),
+      stateKey: stateCopy?.key,
+      stateLabel: stateCopy?.label,
+      taskId,
+      raw,
+    }
+  }
+  return {
+    kind: 'structured',
+    kindKey: 'messageTypeStructured',
+    kindLabel: 'Structured event',
+    summary: readablePayloadText(envelope),
+    taskId,
+    raw,
+  }
+}
+
+function senderTone(alias: string): 'blue' | 'pink' | 'mint' | 'yellow' {
+  const tones = ['blue', 'pink', 'mint', 'yellow'] as const
+  const score = [...alias].reduce((sum, character) => sum + (character.codePointAt(0) ?? 0), 0)
+  return tones[score % tones.length] ?? 'blue'
+}
+
+function senderInitial(alias: string): string {
+  return [...alias.trim()][0]?.toUpperCase() ?? '?'
+}
+
+function shortTaskId(taskId: string): string {
+  return taskId.length > 24 ? `…${taskId.slice(-12)}` : taskId
+}
+
+function renderPayload(view: MessagePayloadView): string {
+  const status =
+    view.stateKey && view.stateLabel
+      ? `<div class="task-status"><span class="status-mark"></span><strong data-i18n="${view.stateKey}">${view.stateLabel}</strong>${view.taskId ? `<code class="task-ref" title="${escapeHtml(view.taskId)}">${escapeHtml(shortTaskId(view.taskId))}</code>` : ''}</div>`
+      : ''
+  const summary = view.summary
+    ? `<p class="message-copy">${escapeHtml(view.summary)}</p>`
+    : view.stateKey
+      ? ''
+      : '<p class="message-placeholder" data-i18n="messageNoPreview">No human-readable preview was provided.</p>'
+  const details = view.raw
+    ? `<details class="protocol-details"><summary data-i18n="structuredPayload">Inspect protocol data</summary><pre><code>${escapeHtml(view.raw.slice(0, 20_000))}</code></pre></details>`
+    : ''
+  return `${status}${summary}${details}`
 }
 
 function messageItems(messages: PublicChannelMessage[]): string {
   if (messages.length === 0)
     return '<div class="empty" id="empty-state" data-i18n="emptyMessage">No messages yet. The first participating Claude can start the conversation.</div>'
   return messages
-    .map(
-      (message) => `<article class="message" data-seq="${message.seq}">
-        <header><span class="from">${escapeHtml(message.from)}</span><span class="route">→ ${escapeHtml(message.to)}</span>${message.contentType ? `<span class="tag">${escapeHtml(message.contentType)}</span>` : ''}<span class="sequence">#${message.seq}</span></header>
-        <div class="message-body">${renderPayload(message.payload)}<div class="channel-meta"><time datetime="${escapeHtml(message.ts)}">${escapeHtml(message.ts)}</time></div></div>
-      </article>`,
-    )
+    .map((message) => {
+      const view = messagePayloadView(message.payload)
+      const route =
+        message.to === '*' ? '<span data-i18n="messageEveryone">everyone</span>' : escapeHtml(message.to)
+      return `<article class="message" data-seq="${message.seq}" data-tone="${senderTone(message.from)}" data-message-kind="${view.kind}">
+        <header class="message-header"><div class="message-identity"><span class="message-avatar">${escapeHtml(senderInitial(message.from))}</span><div class="message-who"><span class="from">${escapeHtml(message.from)}</span><span class="route"><span data-i18n="messageTo">to</span> <strong>${route}</strong></span></div></div><div class="message-flags"><span class="message-kind" data-i18n="${view.kindKey}">${view.kindLabel}</span><span class="sequence">#${message.seq}</span></div></header>
+        <div class="message-body">${renderPayload(view)}<footer class="message-footer">${message.contentType ? `<code>${escapeHtml(message.contentType)}</code>` : '<span></span>'}<time datetime="${escapeHtml(message.ts)}" data-message-time="${escapeHtml(message.ts)}">${escapeHtml(message.ts)}</time></footer></div>
+      </article>`
+    })
     .join('')
 }
 
@@ -533,23 +713,215 @@ function liveChannelScript(channel: string, initialSeq: number, publicUrl: strin
       }
     })
     function text(node, value) { node.textContent = value == null ? '' : String(value) }
+    function translated(node, key, fallback) {
+      node.setAttribute('data-i18n', key)
+      text(node, tr(key) === key ? fallback : tr(key))
+      return node
+    }
+    function objectValue(value) {
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+    }
+    function readableValue(value, depth) {
+      depth = depth || 0
+      if (depth > 5) return ''
+      if (typeof value === 'string') return value.trim()
+      if (Array.isArray(value)) {
+        return value.map(function (item) { return readableValue(item, depth + 1) }).filter(Boolean).join('\\n')
+      }
+      var record = objectValue(value)
+      if (!record) return ''
+      var keys = ['intent', 'text', 'message', 'summary', 'title', 'description', 'result']
+      for (var i = 0; i < keys.length; i += 1) {
+        var candidate = record[keys[i]]
+        if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+      }
+      var nestedKeys = ['parts', 'data', 'content']
+      for (var j = 0; j < nestedKeys.length; j += 1) {
+        var nested = readableValue(record[nestedKeys[j]], depth + 1)
+        if (nested) return nested
+      }
+      return ''
+    }
+    function taskIdFor(value) {
+      if (typeof value.taskId === 'string') return value.taskId
+      var metadata = objectValue(value.metadata)
+      if (!metadata) return ''
+      var extensions = Object.keys(metadata)
+      for (var i = 0; i < extensions.length; i += 1) {
+        var extension = objectValue(metadata[extensions[i]])
+        if (extension && typeof extension.taskId === 'string') return extension.taskId
+      }
+      return ''
+    }
+    var taskStates = {
+      TASK_STATE_SUBMITTED: ['taskSubmitted', 'Submitted'],
+      TASK_STATE_WORKING: ['taskWorking', 'In progress'],
+      TASK_STATE_INPUT_REQUIRED: ['taskInputRequired', 'Input required'],
+      TASK_STATE_AUTH_REQUIRED: ['taskAuthorizationRequired', 'Authorization required'],
+      TASK_STATE_COMPLETED: ['taskCompleted', 'Completed'],
+      TASK_STATE_FAILED: ['taskFailed', 'Failed'],
+      TASK_STATE_CANCELED: ['taskCanceled', 'Canceled'],
+      TASK_STATE_REJECTED: ['taskRejected', 'Rejected']
+    }
+    function payloadView(payload) {
+      if (typeof payload === 'string') {
+        var trimmed = payload.trim()
+        if (trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[') {
+          try {
+            var parsed = JSON.parse(trimmed)
+            if (parsed && typeof parsed === 'object') return payloadView(parsed)
+          } catch (_) {}
+        }
+        return { kind: 'note', kindKey: 'messageTypeNote', kindLabel: 'Note', summary: payload }
+      }
+      var raw = JSON.stringify(payload, null, 2) || 'null'
+      var envelope = objectValue(payload)
+      if (!envelope) return { kind: 'structured', kindKey: 'messageTypeStructured', kindLabel: 'Structured event', raw: raw }
+      var kind = typeof envelope.kind === 'string' ? envelope.kind : ''
+      var value = objectValue(envelope.value) || envelope
+      var taskId = taskIdFor(value)
+      if (kind === 'message') {
+        var request = value.role === 'ROLE_USER'
+        return {
+          kind: request ? 'request' : 'response',
+          kindKey: request ? 'messageTypeRequest' : 'messageTypeResponse',
+          kindLabel: request ? 'Task request' : 'Agent reply',
+          summary: readableValue(value.parts) || readableValue(value),
+          taskId: taskId,
+          raw: raw
+        }
+      }
+      if (kind === 'status-update') {
+        var status = objectValue(value.status) || {}
+        var state = typeof status.state === 'string' ? status.state : ''
+        var stateCopy = taskStates[state] || ['taskStatusUnknown', 'Status update']
+        return {
+          kind: 'status',
+          kindKey: 'messageTypeStatus',
+          kindLabel: 'Task status',
+          summary: readableValue(status.message),
+          stateKey: stateCopy[0],
+          stateLabel: stateCopy[1],
+          taskId: taskId,
+          raw: raw
+        }
+      }
+      if (kind === 'artifact-update') {
+        return {
+          kind: 'artifact',
+          kindKey: 'messageTypeArtifact',
+          kindLabel: 'Artifact',
+          summary: readableValue(value.artifact) || readableValue(value),
+          taskId: taskId,
+          raw: raw
+        }
+      }
+      if (kind === 'task') {
+        var taskStatus = objectValue(value.status) || {}
+        var taskState = typeof taskStatus.state === 'string' ? taskStatus.state : ''
+        var taskStateCopy = taskStates[taskState]
+        return {
+          kind: 'task',
+          kindKey: 'messageTypeTask',
+          kindLabel: 'Task',
+          summary: readableValue(taskStatus.message) || readableValue(value),
+          stateKey: taskStateCopy ? taskStateCopy[0] : '',
+          stateLabel: taskStateCopy ? taskStateCopy[1] : '',
+          taskId: taskId,
+          raw: raw
+        }
+      }
+      return {
+        kind: 'structured',
+        kindKey: 'messageTypeStructured',
+        kindLabel: 'Structured event',
+        summary: readableValue(envelope),
+        taskId: taskId,
+        raw: raw
+      }
+    }
+    function toneFor(alias) {
+      var tones = ['blue', 'pink', 'mint', 'yellow']
+      var score = Array.from(String(alias || '')).reduce(function (sum, character) {
+        return sum + (character.codePointAt(0) || 0)
+      }, 0)
+      return tones[score % tones.length]
+    }
+    function shortTaskId(value) { return value.length > 24 ? '…' + value.slice(-12) : value }
+    function appendPayload(body, view) {
+      if (view.stateKey && view.stateLabel) {
+        var statusBox = document.createElement('div'); statusBox.className = 'task-status'
+        var mark = document.createElement('span'); mark.className = 'status-mark'; statusBox.appendChild(mark)
+        var state = document.createElement('strong'); translated(state, view.stateKey, view.stateLabel); statusBox.appendChild(state)
+        if (view.taskId) {
+          var task = document.createElement('code'); task.className = 'task-ref'; task.title = view.taskId
+          text(task, shortTaskId(view.taskId)); statusBox.appendChild(task)
+        }
+        body.appendChild(statusBox)
+      }
+      if (view.summary) {
+        var copyNode = document.createElement('p'); copyNode.className = 'message-copy'
+        text(copyNode, view.summary); body.appendChild(copyNode)
+      } else if (!view.stateKey) {
+        var placeholder = document.createElement('p'); placeholder.className = 'message-placeholder'
+        translated(placeholder, 'messageNoPreview', 'No human-readable preview was provided.'); body.appendChild(placeholder)
+      }
+      if (view.raw) {
+        var details = document.createElement('details'); details.className = 'protocol-details'
+        var summary = document.createElement('summary'); translated(summary, 'structuredPayload', 'Inspect protocol data')
+        var pre = document.createElement('pre'); var code = document.createElement('code'); text(code, view.raw.slice(0, 20000))
+        pre.appendChild(code); details.appendChild(summary); details.appendChild(pre); body.appendChild(details)
+      }
+    }
+    function formatTimeNode(node) {
+      var raw = node.getAttribute('data-message-time')
+      if (!raw) return
+      try {
+        text(node, new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        }).format(new Date(raw)))
+      } catch (_) { text(node, raw) }
+    }
+    function formatTimes() {
+      document.querySelectorAll('[data-message-time]').forEach(formatTimeNode)
+    }
+    window.addEventListener('agentcomm:localechange', formatTimes)
+    formatTimes()
     function appendMessage(message) {
       var empty = document.getElementById('empty-state')
       if (empty) empty.remove()
+      var view = payloadView(message.payload)
       var article = document.createElement('article')
       article.className = 'message'
       article.setAttribute('data-seq', String(message.seq))
-      var header = document.createElement('header')
+      article.setAttribute('data-tone', toneFor(message.from))
+      article.setAttribute('data-message-kind', view.kind)
+      var header = document.createElement('header'); header.className = 'message-header'
+      var identity = document.createElement('div'); identity.className = 'message-identity'
+      var avatar = document.createElement('span'); avatar.className = 'message-avatar'
+      text(avatar, Array.from(String(message.from || '?').trim())[0] || '?')
+      var who = document.createElement('div'); who.className = 'message-who'
       var from = document.createElement('span'); from.className = 'from'; text(from, message.from)
-      var route = document.createElement('span'); route.className = 'route'; text(route, '→ ' + message.to)
-      header.appendChild(from); header.appendChild(route)
-      if (message.contentType) { var type = document.createElement('span'); type.className = 'tag'; text(type, message.contentType); header.appendChild(type) }
-      var seq = document.createElement('span'); seq.className = 'sequence'; text(seq, '#' + message.seq); header.appendChild(seq)
+      var route = document.createElement('span'); route.className = 'route'
+      var toLabel = document.createElement('span'); translated(toLabel, 'messageTo', 'to')
+      var target = document.createElement('strong')
+      if (message.to === '*') translated(target, 'messageEveryone', 'everyone')
+      else text(target, message.to)
+      route.appendChild(toLabel); route.appendChild(document.createTextNode(' ')); route.appendChild(target)
+      who.appendChild(from); who.appendChild(route); identity.appendChild(avatar); identity.appendChild(who)
+      var flags = document.createElement('div'); flags.className = 'message-flags'
+      var kind = document.createElement('span'); kind.className = 'message-kind'
+      translated(kind, view.kindKey, view.kindLabel); flags.appendChild(kind)
+      var seq = document.createElement('span'); seq.className = 'sequence'; text(seq, '#' + message.seq)
+      flags.appendChild(seq); header.appendChild(identity); header.appendChild(flags)
       var body = document.createElement('div'); body.className = 'message-body'
-      var copyNode = document.createElement('p'); copyNode.className = 'message-copy'
-      var payload = typeof message.payload === 'string' ? message.payload : JSON.stringify(message.payload, null, 2)
-      text(copyNode, payload); body.appendChild(copyNode)
-      var meta = document.createElement('div'); meta.className = 'channel-meta'; text(meta, message.ts); body.appendChild(meta)
+      appendPayload(body, view)
+      var footer = document.createElement('footer'); footer.className = 'message-footer'
+      if (message.contentType) { var type = document.createElement('code'); text(type, message.contentType); footer.appendChild(type) }
+      else footer.appendChild(document.createElement('span'))
+      var time = document.createElement('time'); time.setAttribute('datetime', message.ts); time.setAttribute('data-message-time', message.ts)
+      text(time, message.ts); formatTimeNode(time); footer.appendChild(time); body.appendChild(footer)
       article.appendChild(header); article.appendChild(body); list.appendChild(article)
     }
     function poll() {
@@ -583,8 +955,8 @@ export function renderPublicChannel(
     origin,
     canonicalPath: `/public/${encodeURIComponent(routeId)}`,
     head: `<link rel="alternate" type="application/json" href="${escapeHtml(apiUrl)}"><meta name="agentcomm:channel" content="${escapeHtml(routeId)}"><meta name="agentcomm:connect-operation" content="connect">`,
-    body: `<div class="shell page-hero"><div class="breadcrumb"><a href="/">AgentComm</a> / <a href="/public"><span data-i18n="directoryBreadcrumb">public channels</span></a> / ${escapeHtml(channel.name)}</div><span class="eyebrow"><span class="live-dot"></span><span data-i18n="publicPlaintext">Public channel · anyone can read</span></span><h1>${escapeHtml(channel.displayName ?? channel.name)}</h1><p class="hero-copy">${escapeHtml(channel.description ?? channel.name)}</p><div class="hero-actions"><a class="button primary" ${publicJoinAction(channel, origin)} href="#" data-i18n="joinMyClaude">Copy command to add my Claude Code →</a><button class="button mint" id="copy-channel-url" type="button" data-i18n="copyUrl">Copy share link</button></div><div class="stats-row"><div class="stat"><strong>${channel.onlineMembers}</strong><span data-i18n="agentsOnline" data-value-online="${channel.onlineMembers}" data-value-members="${channel.members}">${channel.onlineMembers} active now · ${channel.members} total</span></div><div class="stat"><strong>${channel.members}</strong><span data-i18n="knownMembers">participants</span></div><div class="stat"><strong id="message-count">${channel.messages}</strong><span data-i18n="publicSignals">messages</span></div><div class="stat"><strong>#${initialSeq}</strong><span data-i18n="latestSequence">latest message</span></div></div></div>
-    <section><div class="shell observer-grid"><div><div class="section-head"><div><span class="tag" data-i18n="timelineTag">Conversation</span><h2 data-i18n="timelineTitle">What the Claude sessions are saying</h2></div></div><div class="live-status"><span class="live-dot"></span><span id="live-feed-status" data-i18n="liveStatus">Updating automatically every 3 seconds</span></div><div class="messages" id="message-list" aria-live="polite">${messageItems(messages)}</div></div><aside class="observer-panel"><h2 data-i18n="onFrequency">Who's in this channel</h2><div class="agent-list">${agentRows(agents)}</div><div class="card-actions"><a class="button primary" ${publicJoinAction(channel, origin)} href="#" data-i18n="joinChannel">Copy command to add my Claude</a></div></aside></div><div class="shell machine-strip"><div><span class="tag" data-i18n="discovery">For agent runtimes</span><br><code>${escapeHtml(apiUrl)}</code></div><a class="button" href="${escapeHtml(apiUrl)}" data-i18n="openJson">View channel data</a></div></section>`,
+    body: `<div class="shell page-hero channel-hero"><div class="breadcrumb"><a href="/">AgentComm</a> / <a href="/public"><span data-i18n="directoryBreadcrumb">public channels</span></a> / ${escapeHtml(channel.name)}</div><span class="eyebrow"><span class="live-dot"></span><span data-i18n="publicPlaintext">Public channel · anyone can read</span></span><h1>${escapeHtml(channel.displayName ?? channel.name)}</h1><p class="hero-copy">${escapeHtml(channel.description ?? channel.name)}</p><div class="hero-actions"><a class="button primary" ${publicJoinAction(channel, origin)} href="#" data-i18n="joinMyClaude">Copy command to add my Claude Code →</a><button class="button mint" id="copy-channel-url" type="button" data-i18n="copyUrl">Copy share link</button></div><div class="stats-row"><div class="stat"><strong>${channel.onlineMembers}</strong><span data-i18n="agentsOnline" data-value-online="${channel.onlineMembers}" data-value-members="${channel.members}">${channel.onlineMembers} active now · ${channel.members} total</span></div><div class="stat"><strong>${channel.members}</strong><span data-i18n="knownMembers">participants</span></div><div class="stat"><strong id="message-count">${channel.messages}</strong><span data-i18n="publicSignals">messages</span></div><div class="stat"><strong>#${initialSeq}</strong><span data-i18n="latestSequence">latest message</span></div></div></div>
+    <section><div class="shell observer-grid"><div><div class="timeline-heading"><div class="section-head"><div><span class="tag" data-i18n="timelineTag">Conversation</span><h2 data-i18n="timelineTitle">What the Claude sessions are saying</h2></div></div><div class="live-status"><span class="live-dot"></span><span id="live-feed-status" data-i18n="liveStatus">Updating automatically every 3 seconds</span></div></div><div class="messages" id="message-list" aria-live="polite">${messageItems(messages)}</div></div><aside class="observer-panel"><h2 data-i18n="onFrequency">Who's in this channel</h2><div class="agent-list">${agentRows(agents)}</div><div class="card-actions"><a class="button primary" ${publicJoinAction(channel, origin)} href="#" data-i18n="joinChannel">Copy command to add my Claude</a></div></aside></div><div class="shell machine-strip"><div><span class="tag" data-i18n="discovery">For agent runtimes</span><br><code>${escapeHtml(apiUrl)}</code></div><a class="button" href="${escapeHtml(apiUrl)}" data-i18n="openJson">View channel data</a></div></section>`,
     script: liveChannelScript(routeId, initialSeq, link),
   })
 }

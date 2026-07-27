@@ -54,21 +54,19 @@ describe('relay public channels', () => {
     expect(homeHtml).toContain('window.localStorage.removeItem(storageKey)')
     expect(homeHtml).toContain('data-i18n="heroCopy"')
     expect(homeHtml).toContain('data-agentcomm-action="create"')
-    expect(homeHtml).toContain('Agents can talk.')
+    expect(homeHtml).toContain('Give Claude')
     expect(homeHtml).toContain('Three steps, then let the Claude sessions work.')
     expect(homeHtml).toContain('data-value-online="0"')
-    expect(homeHtml).toContain('Agent は話せる。')
-    expect(homeHtml).toContain('Los agentes conversan.')
-    expect(homeHtml).toContain('Агенты общаются.')
+    expect(homeHtml).toContain('Claude に')
+    expect(homeHtml).toContain('Dale a Claude')
+    expect(homeHtml).toContain('Дайте Claude')
     expect(homeHtml).toContain('https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md')
-    expect(homeHtml).toContain(
-      'https://github.com/tianqixinxi/agent-conn/tree/main/applications/manager-workers',
-    )
-    expect(homeHtml).toContain(
-      'Full Milestone 1 worker lifecycle and worktree automation are not yet claimed complete.',
-    )
-    expect(homeHtml).toContain('DeliveryHoldDecision, TaskAuthorization, and HostPermission')
-    expect(homeHtml).toContain('never installs or executes code')
+    expect(homeHtml).toContain('From invitation to result, without managing the plumbing.')
+    expect(homeHtml).toContain('Invite another agent')
+    expect(homeHtml).toContain('Routine work flows. Sensitive actions stop.')
+    expect(homeHtml).toContain('Build on the same open foundation.')
+    expect(homeHtml).not.toContain('data-i18n="layerCommunityTitle"')
+    expect(homeHtml).not.toContain('data-i18n="referenceCaveat"')
     for (const packageName of [
       '@agent-comm/core',
       '@agent-comm/delivery',
@@ -79,17 +77,15 @@ describe('relay public channels', () => {
       '@agent-comm/gateway-a2a',
       '@agent-comm/relay',
     ]) {
-      expect(homeHtml).toContain(packageName)
+      expect(homeHtml).not.toContain(packageName)
     }
     for (const key of [
       'protocolCopy',
-      'layerCommunityTitle',
-      'layerSpecTitle',
-      'layerHarnessTitle',
-      'layerCoreTitle',
-      'layerRelayTitle',
       'componentsTitle',
-      'referenceCaveat',
+      'componentFoundationTitle',
+      'componentApplicationTitle',
+      'componentRuntimeTitle',
+      'componentServicesTitle',
       'securityTitle',
       'privacyCopy',
       'decisionsCopy',
@@ -136,9 +132,51 @@ describe('relay public channels', () => {
       contentType: 'text/plain',
       payload: '<script>alert("not html")</script>',
     })
+    const taskRequest = makeEnvelope({
+      from: 'alice',
+      to: 'bob',
+      channel: 'open-lab',
+      contentType: 'application/a2a+json',
+      payload: {
+        protocolVersion: '1.0',
+        kind: 'message',
+        value: {
+          role: 'ROLE_USER',
+          parts: [{ data: { intent: 'Review the public channel timeline' }, mediaType: 'application/json' }],
+          metadata: {
+            'https://agentcomm.dev/extensions/private-channel/v1': {
+              taskId: 'task-m-public-channel-review',
+            },
+          },
+        },
+      },
+    })
+    const taskCompleted = makeEnvelope({
+      from: 'bob',
+      to: 'alice',
+      channel: 'open-lab',
+      contentType: 'application/a2a+json',
+      payload: {
+        protocolVersion: '1.0',
+        kind: 'status-update',
+        value: {
+          taskId: 'task-m-public-channel-review',
+          status: {
+            state: 'TASK_STATE_COMPLETED',
+            timestamp: '2026-07-27T12:00:00.000Z',
+          },
+        },
+      },
+    })
     expect(
-      (await app.request(messagePath, signedRequest(lead, 'POST', messagePath, { messages: [envelope] })))
-        .status,
+      (
+        await app.request(
+          messagePath,
+          signedRequest(lead, 'POST', messagePath, {
+            messages: [envelope, taskRequest, taskCompleted],
+          }),
+        )
+      ).status,
     ).toBe(200)
 
     const directory = await app.request('/api/public/channels')
@@ -181,9 +219,30 @@ describe('relay public channels', () => {
     expect(pageHtml).toContain('data-i18n="timelineTitle"')
     expect(pageHtml).toContain('data-agentcomm-action="join"')
     expect(pageHtml).toContain('data-public-url="http://localhost/public/open-lab"')
+    expect(pageHtml).toContain('class="message-avatar"')
+    expect(pageHtml).toContain('data-message-kind="request"')
+    expect(pageHtml).toContain('data-message-kind="status"')
+    expect(pageHtml).toContain('data-i18n="messageTypeRequest"')
+    expect(pageHtml).toContain('data-i18n="messageTypeStatus"')
+    expect(pageHtml).toContain('data-i18n="taskCompleted"')
+    expect(pageHtml).toContain('Review the public channel timeline')
+    expect(pageHtml).toContain('<details class="protocol-details">')
+    expect(pageHtml).not.toContain('<details class="protocol-details" open')
+    expect(pageHtml).toContain('data-message-time=')
+    expect(pageHtml).toContain('function payloadView(payload)')
     expect(pageHtml).not.toContain('})()\n(() =>')
     expect(pageHtml).toContain('&lt;script&gt;alert(&quot;not html&quot;)&lt;/script&gt;')
     expect(pageHtml).not.toContain('<script>alert("not html")</script>')
+    for (const key of [
+      'messageTo',
+      'messageEveryone',
+      'messageTypeRequest',
+      'messageTypeStatus',
+      'taskCompleted',
+      'messageNoPreview',
+    ]) {
+      expect(homeHtml.split(`"${key}":`)).toHaveLength(10)
+    }
 
     expect((await app.request('/public/secret-lab')).status).toBe(404)
     expect((await app.request('/api/public/channels/secret-lab/messages')).status).toBe(404)

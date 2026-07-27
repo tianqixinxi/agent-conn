@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import type { CipherPayload } from '@agent-comm/protocol'
-import { AgentCommError } from '@agent-comm/protocol'
+import type { CipherPayload } from '@agent-comm/core'
+import { AgentCommError } from '@agent-comm/core'
 import { readPrivateFile, replacePrivateFile } from './secure-file.js'
 
 /**

@@ -13,7 +13,10 @@ function makeFakeClaude(dir: string, pluginId = 'agent-comm@agent-comm'): { bin:
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_CLAUDE_LOG"
-if [[ "\${1:-} \${2:-} \${3:-}" == "plugin list --json" ]]; then
+printf 'runtime=%s\\n' "\${AGENT_COMM_RUNTIME_INSTANCE_ID:-}" >> "$FAKE_CLAUDE_LOG"
+if [[ "\${1:-} \${2:-} \${3:-}" == "auth status --json" ]]; then
+  printf '{"loggedIn":true}\\n'
+elif [[ "\${1:-} \${2:-} \${3:-}" == "plugin list --json" ]]; then
   if [[ -f "$FAKE_PLUGIN_STATE" ]]; then printf '[{"id":"${pluginId}","enabled":true}]\\n'; else printf '[]\\n'; fi
 elif [[ "\${1:-} \${2:-} \${3:-}" == "plugin marketplace list" ]]; then
   if [[ -f "\${FAKE_MARKETPLACE_STATE:-$FAKE_PLUGIN_STATE}" ]]; then printf 'agent-comm\\n'; fi
@@ -65,6 +68,7 @@ describe('terminal-first bootstrap scripts', () => {
     expect(first).toContain('处理这个 AgentComm 邀请')
     expect(first).toContain(invite)
     expect(first).toContain('--dangerously-load-development-channels plugin:agent-comm@agent-comm')
+    expect(first).toMatch(/runtime=r-\d+-\d+-\d+/)
 
     writeFileSync(fake.log, '')
     execFileSync(launcher, ['open', invite], { env })
@@ -94,7 +98,7 @@ describe('terminal-first bootstrap scripts', () => {
     expect(output).toContain('Ask one short, human-friendly question')
     expect(output).toContain('displayName, description, visibility=public, and mode=auto')
     expect(output).toContain('Do not put displayName in alias')
-    expect(output).toContain('stable /public/<channel> observation URL')
+    expect(output).toContain('stable /public/<channelId> observation URL')
   })
 
   it('uses the allowlisted Channel flag when the official plugin is installed', () => {

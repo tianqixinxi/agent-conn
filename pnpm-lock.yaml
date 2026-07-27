@@ -27,8 +27,47 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@26.1.1)(tsx@4.23.1)
 
+  applications/manager-workers:
+    dependencies:
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../../packages/application-spec
+      '@agent-comm/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/a2a-binding:
+    dependencies:
+      '@a2a-js/sdk':
+        specifier: 1.0.0-beta.0
+        version: 1.0.0-beta.0(express@5.2.1)
+      '@agent-comm/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/agent-comm:
     dependencies:
+      '@agent-comm/a2a-binding':
+        specifier: workspace:*
+        version: link:../a2a-binding
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../application-spec
+      '@agent-comm/client-sdk':
+        specifier: workspace:*
+        version: link:../client-sdk
+      '@agent-comm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agent-comm/delivery':
+        specifier: workspace:*
+        version: link:../delivery
       '@agent-comm/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -42,20 +81,65 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  packages/protocol:
+  packages/application-spec:
     dependencies:
-      '@a2a-js/sdk':
-        specifier: 1.0.0-beta.0
-        version: 1.0.0-beta.0(express@5.2.1)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/client-sdk:
+    dependencies:
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../application-spec
+
+  packages/core:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/delivery:
+    dependencies:
+      '@agent-comm/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/gateway-a2a:
+    dependencies:
+      '@agent-comm/a2a-binding':
+        specifier: workspace:*
+        version: link:../a2a-binding
+      '@agent-comm/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agent-comm/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+
+  packages/harness-claude-code:
+    dependencies:
+      agent-comm:
+        specifier: workspace:*
+        version: link:../agent-comm
+
+  packages/protocol:
+    dependencies:
+      '@agent-comm/a2a-binding':
+        specifier: workspace:*
+        version: link:../a2a-binding
+      '@agent-comm/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/relay:
     dependencies:
-      '@agent-comm/protocol':
+      '@agent-comm/core':
         specifier: workspace:*
-        version: link:../protocol
+        version: link:../core
+      '@agent-comm/gateway-a2a':
+        specifier: workspace:*
+        version: link:../gateway-a2a
       '@hono/node-server':
         specifier: ^2.0.10
         version: 2.0.10(hono@4.12.30)

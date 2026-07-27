@@ -1,7 +1,6 @@
-export * from './a2a.js'
-export * from './entities.js'
-export * from './errors.js'
-export * from './ids.js'
-export * from './intents.js'
-export * from './invite-link.js'
-export * from './wire.js'
+/**
+ * Compatibility facade for 0.x consumers. New code should import foundation
+ * entities from @agent-comm/core and A2A semantics from @agent-comm/a2a-binding.
+ */
+export * from '@agent-comm/a2a-binding'
+export * from '@agent-comm/core'

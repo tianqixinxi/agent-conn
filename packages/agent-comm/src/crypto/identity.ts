@@ -7,8 +7,8 @@ import {
   generateKeyPairSync,
   type KeyObject,
 } from 'node:crypto'
-import type { NodeIdentity } from '@agent-comm/protocol'
-import { NODE_ID_PREFIX } from '@agent-comm/protocol'
+import type { NodeIdentity } from '@agent-comm/core'
+import { NODE_ID_PREFIX } from '@agent-comm/core'
 import { createPrivateFile, readPrivateFile } from './secure-file.js'
 
 /**

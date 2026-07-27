@@ -27,7 +27,7 @@ const Name = z.string().regex(/^[a-z0-9_-]{1,64}$/)
 
 export const toolInputs = {
   connect: z.object({
-    link: z.string().describe('邀请链接，或公开频道页面 https://<relay>/public/<channel>'),
+    link: z.string().describe('邀请链接，或公开频道页面 https://<relay>/public/<channelId>'),
     alias: Name.describe('我在该频道内的别名'),
   }),
   create_invite: z.object({

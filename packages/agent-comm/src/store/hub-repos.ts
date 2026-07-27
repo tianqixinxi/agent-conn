@@ -8,7 +8,7 @@ import type {
   InviteScope,
   MessageEnvelope,
   MsgStatus,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
 import {
   openDb,
   optNum,
@@ -34,7 +34,10 @@ const HUB_SCHEMA_SQL = readFileSync(new URL('./schema.hub.sql', import.meta.url)
 // —— hub_channels ——
 
 export interface HubChannelRow {
+  /** Opaque route identity kept in the legacy `name` column. */
   name: string
+  /** Human alias; it may repeat between channels. */
+  channelName?: string | undefined
   displayName?: string | undefined
   mode: ChannelMode
   visibility: ChannelVisibility
@@ -43,8 +46,10 @@ export interface HubChannelRow {
 }
 
 function toHubChannelRow(row: Row): HubChannelRow {
+  const channelId = reqStr(row, 'name')
   return {
-    name: reqStr(row, 'name'),
+    name: channelId,
+    channelName: optStr(row, 'channel_name') ?? channelId,
     displayName: optStr(row, 'display_name'),
     mode: reqStr(row, 'mode') as ChannelMode,
     visibility: reqStr(row, 'visibility') as ChannelVisibility,
@@ -56,7 +61,7 @@ function toHubChannelRow(row: Row): HubChannelRow {
 function createHubChannelsRepo(db: DatabaseSync) {
   const getStmt = db.prepare('SELECT * FROM hub_channels WHERE name = ?')
   const insertStmt = db.prepare(
-    'INSERT INTO hub_channels (name, display_name, mode, visibility, description, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO hub_channels (name, channel_name, display_name, mode, visibility, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
   )
   const setModeStmt = db.prepare('UPDATE hub_channels SET mode = ? WHERE name = ?')
   return {
@@ -67,6 +72,7 @@ function createHubChannelsRepo(db: DatabaseSync) {
     insert(row: HubChannelRow): void {
       insertStmt.run(
         row.name,
+        row.channelName ?? row.name,
         row.displayName ?? null,
         row.mode,
         row.visibility,
@@ -357,6 +363,10 @@ export function openHubDb(path: string): HubHandle {
   const channelColumns = db.prepare("PRAGMA table_info('hub_channels')").all() as Row[]
   if (!channelColumns.some((row) => reqStr(row, 'name') === 'visibility')) {
     db.exec("ALTER TABLE hub_channels ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
+  }
+  if (!channelColumns.some((row) => reqStr(row, 'name') === 'channel_name')) {
+    db.exec('ALTER TABLE hub_channels ADD COLUMN channel_name TEXT')
+    db.exec('UPDATE hub_channels SET channel_name = name WHERE channel_name IS NULL')
   }
   return {
     path,

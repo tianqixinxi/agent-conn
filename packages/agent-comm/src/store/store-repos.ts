@@ -7,7 +7,8 @@ import type {
   ChannelVisibility,
   InviteScope,
   MsgStatus,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
+import { createApplicationRuntimeStore, createTaskAuthorizationRepo } from './application-repos.js'
 import {
   openDb,
   optNum,
@@ -68,6 +69,9 @@ function createIdentityRepo(db: DatabaseSync) {
 // —— channels(我加入的频道镜像) ——
 
 export interface StoreChannelRow {
+  /** Opaque route identity; old callers may omit it and use `name` as the identity. */
+  channelId?: string | undefined
+  /** Human channel alias; it is not unique. */
   name: string
   home: string
   displayName?: string | undefined
@@ -81,8 +85,10 @@ export interface StoreChannelRow {
 }
 
 function toChannelRow(row: Row): StoreChannelRow {
+  const channelId = reqStr(row, 'name')
   return {
-    name: reqStr(row, 'name'),
+    channelId,
+    name: optStr(row, 'channel_name') ?? channelId,
     home: reqStr(row, 'home'),
     displayName: optStr(row, 'display_name'),
     mode: reqStr(row, 'mode') as ChannelMode,
@@ -100,9 +106,10 @@ function createChannelsRepo(db: DatabaseSync) {
   const listStmt = db.prepare('SELECT * FROM channels ORDER BY created_at ASC')
   const countStmt = db.prepare('SELECT COUNT(*) as c FROM channels')
   const upsertStmt = db.prepare(`
-    INSERT INTO channels (name, home, display_name, mode, visibility, description, my_alias, scope_json, e2e_key_ref, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO channels (name, channel_name, home, display_name, mode, visibility, description, my_alias, scope_json, e2e_key_ref, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
+      channel_name = excluded.channel_name,
       home = excluded.home,
       display_name = excluded.display_name,
       mode = excluded.mode,
@@ -128,6 +135,7 @@ function createChannelsRepo(db: DatabaseSync) {
     },
     upsert(row: StoreChannelRow): void {
       upsertStmt.run(
+        row.channelId ?? row.name,
         row.name,
         row.home,
         row.displayName ?? null,
@@ -201,6 +209,7 @@ export interface StoreMessageRow {
   replyBy?: string | undefined
   hop: number
   contentType?: string | undefined
+  runtimeInstanceId?: string | undefined
   payload: unknown
   status: MsgStatus
   injectedByHuman: boolean
@@ -220,6 +229,7 @@ function toMessageRow(row: Row): StoreMessageRow {
     replyBy: optStr(row, 'reply_by'),
     hop: reqNum(row, 'hop'),
     contentType: optStr(row, 'content_type'),
+    runtimeInstanceId: optStr(row, 'runtime_instance_id'),
     payload: parseJson(reqStr(row, 'payload_json')),
     status: reqStr(row, 'status') as MsgStatus,
     injectedByHuman: reqBool(row, 'injected_by_human'),
@@ -231,8 +241,8 @@ function toMessageRow(row: Row): StoreMessageRow {
 function createMessagesRepo(db: DatabaseSync) {
   const insertStmt = db.prepare(`
     INSERT INTO messages (message_id, channel, seq, from_alias, to_target, trace_id, reply_to, reply_by, hop,
-      content_type, payload_json, status, injected_by_human, ts, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      content_type, runtime_instance_id, payload_json, status, injected_by_human, ts, delivered_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(message_id) DO NOTHING
   `)
   const getStmt = db.prepare('SELECT * FROM messages WHERE message_id = ?')
@@ -255,6 +265,7 @@ function createMessagesRepo(db: DatabaseSync) {
         row.replyBy ?? null,
         row.hop,
         row.contentType ?? null,
+        row.runtimeInstanceId ?? null,
         toJson(row.payload),
         row.status,
         row.injectedByHuman ? 1 : 0,
@@ -452,6 +463,7 @@ export interface StoreAuditRow {
   fromAlias?: string | undefined
   toTarget?: string | undefined
   actor: string
+  runtimeInstanceId?: string | undefined
   detail?: string | undefined
 }
 
@@ -472,14 +484,16 @@ function toAuditRow(row: Row): StoreAuditRow {
     fromAlias: optStr(row, 'from_alias'),
     toTarget: optStr(row, 'to_target'),
     actor: reqStr(row, 'actor'),
+    runtimeInstanceId: optStr(row, 'runtime_instance_id'),
     detail: optStr(row, 'detail'),
   }
 }
 
 function createAuditRepo(db: DatabaseSync) {
   const insertStmt = db.prepare(`
-    INSERT INTO audit (ts, event, message_id, channel, from_alias, to_target, actor, detail)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit (
+      ts, event, message_id, channel, from_alias, to_target, actor, runtime_instance_id, detail
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   return {
     append(row: Omit<StoreAuditRow, 'id'>): void {
@@ -491,6 +505,7 @@ function createAuditRepo(db: DatabaseSync) {
         row.fromAlias ?? null,
         row.toTarget ?? null,
         row.actor,
+        row.runtimeInstanceId ?? null,
         row.detail ?? null,
       )
     },
@@ -530,6 +545,8 @@ export interface StoreHandle {
   syncState: ReturnType<typeof createSyncStateRepo>
   invitesMinted: ReturnType<typeof createInvitesMintedRepo>
   audit: ReturnType<typeof createAuditRepo>
+  applicationRuntime: ReturnType<typeof createApplicationRuntimeStore>
+  taskAuthorizations: ReturnType<typeof createTaskAuthorizationRepo>
   withTx<T>(fn: () => T): T
   close(): void
 }
@@ -539,6 +556,18 @@ export function openStore(path: string): StoreHandle {
   const channelColumns = db.prepare("PRAGMA table_info('channels')").all() as Row[]
   if (!channelColumns.some((row) => reqStr(row, 'name') === 'visibility')) {
     db.exec("ALTER TABLE channels ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'")
+  }
+  if (!channelColumns.some((row) => reqStr(row, 'name') === 'channel_name')) {
+    db.exec('ALTER TABLE channels ADD COLUMN channel_name TEXT')
+    db.exec('UPDATE channels SET channel_name = name WHERE channel_name IS NULL')
+  }
+  const messageColumns = db.prepare("PRAGMA table_info('messages')").all() as Row[]
+  if (!messageColumns.some((row) => reqStr(row, 'name') === 'runtime_instance_id')) {
+    db.exec('ALTER TABLE messages ADD COLUMN runtime_instance_id TEXT')
+  }
+  const auditColumns = db.prepare("PRAGMA table_info('audit')").all() as Row[]
+  if (!auditColumns.some((row) => reqStr(row, 'name') === 'runtime_instance_id')) {
+    db.exec('ALTER TABLE audit ADD COLUMN runtime_instance_id TEXT')
   }
   return {
     path,
@@ -551,6 +580,8 @@ export function openStore(path: string): StoreHandle {
     syncState: createSyncStateRepo(db),
     invitesMinted: createInvitesMintedRepo(db),
     audit: createAuditRepo(db),
+    applicationRuntime: createApplicationRuntimeStore(db),
+    taskAuthorizations: createTaskAuthorizationRepo(db),
     withTx<T>(fn: () => T): T {
       return withTx(db, fn)
     },

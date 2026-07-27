@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentcomm.dev/community/manager-workers/v1/events.schema.json",
+  "$defs": {
+    "teamStarted": {
+      "type": "object",
+      "required": ["manager"],
+      "properties": { "manager": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "workerRegistered": {
+      "type": "object",
+      "required": ["worker", "capabilities"],
+      "properties": {
+        "worker": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "taskRequested": {
+      "type": "object",
+      "required": ["taskId", "goal", "worker"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string", "minLength": 1 },
+        "worker": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "taskAssigned": {
+      "type": "object",
+      "required": ["taskId", "goal", "worker"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string", "minLength": 1 },
+        "worker": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "taskProgress": {
+      "type": "object",
+      "required": ["taskId", "progress"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "progress": { "type": "number", "minimum": 0, "maximum": 100 },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "taskSuspended": {
+      "type": "object",
+      "required": ["taskId", "prompt"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "scope": true
+      },
+      "additionalProperties": false
+    },
+    "taskCompleted": {
+      "type": "object",
+      "required": ["taskId", "result"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "result": true
+      },
+      "additionalProperties": false
+    },
+    "taskFailed": {
+      "type": "object",
+      "required": ["taskId", "error"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "error": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "required": ["taskId"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "reviewer": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

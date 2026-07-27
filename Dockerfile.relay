@@ -6,11 +6,17 @@ RUN npm install --global pnpm@10.33.0
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
-COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/a2a-binding/package.json packages/a2a-binding/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/delivery/package.json packages/delivery/package.json
+COPY packages/gateway-a2a/package.json packages/gateway-a2a/package.json
 COPY packages/relay/package.json packages/relay/package.json
 RUN pnpm install --frozen-lockfile
 
-COPY packages/protocol/src packages/protocol/src
+COPY packages/a2a-binding/src packages/a2a-binding/src
+COPY packages/core/src packages/core/src
+COPY packages/delivery/src packages/delivery/src
+COPY packages/gateway-a2a/src packages/gateway-a2a/src
 COPY packages/relay/src packages/relay/src
 
 RUN pnpm exec esbuild packages/relay/src/main.ts \

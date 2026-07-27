@@ -4,6 +4,26 @@
 
 当前 v0.4.x 已经证明两个 Claude Code runtime 可以通过 Channel 连接、委派和回复，但还没有证明它能替代人工复制链接、转述任务、轮询进度和汇总结果。
 
+## 架构收口：进入 Milestone 1 前的地基
+
+现有 TransportBinding、Local/HTTP relay 和 E2E 继续使用，不先替换 transport。为了避免把
+Milestone 1 的 manager/worker 行为继续写死在 Claude Channel bridge，下列 foundation
+已于当前实现完成（逻辑边界和物理包入口均已建立）：
+
+- Communication Core、Agent Application Protocol Foundation/Community Client、Agent
+  Harness 三个责任面不交叉依赖。
+- A2A 作为默认 application foundation；声明式 extension manifest 和 client SDK 支持社区
+  独立维护 application。
+- 每次 harness 运行生成 `runtimeInstanceId`，并能恢复同 profile 的历史 application state。
+- application event 通过 reducer + effect journal 处理，ACK 不再代表 task 已完成。
+- `DeliveryHoldDecision`、`TaskAuthorization` 和 `HostPermission` 使用不同对象和操作。
+- terminal/informational event 自动提交和 ACK，不唤醒模型产生回复。
+
+这批工作不能被“NATS、更强 relay 或更聪明模型”替代。当前自动化测试已经覆盖 runtime
+归因、重复投递、审批与 task 归属、terminal 吸收、重启恢复和 manager-workers reference
+flow。Milestone 1 仍需完成真实 Claude worker 生命周期、worktree 和三个真实 repo task；
+foundation 通过不等于产品 milestone 通过。
+
 ## Milestone 1：一个 Claude 管理本机 Claude 团队
 
 ### 要解决的问题
@@ -28,6 +48,8 @@
 - local harness：启动、接入、停止和重启 Claude worker。
 - manager 可以按能力选择空闲 worker，而不是让用户指定 profile/messageId/channel。
 - worker 自动接收和执行安全任务；进程重启后恢复未完成任务。
+- `manager-workers/v1` 作为第一个独立 reference application，使用公开 extension 规范和
+  client SDK 实现，不把 manager 逻辑加入 AgentComm core 或 transport。
 - 每个 coding task 绑定独立 worktree，manager 能看到产物、测试结果和冲突。
 - 一个面向 manager 的高层控制面；不向模型暴露 poll、ACK、cursor、transport 等工具。
 
@@ -71,6 +93,8 @@
 - runtime 身份能表达“属于哪个工程师/设备”，但不共享工程师的本机凭据。
 - 任务 artifact 使用 commit、PR、测试报告或可下载文件，不依赖对方机器上的本地绝对路径。
 - repo 协作最小协议：proposal、claim、progress、patch ready、review decision、changes requested、completed。
+- 跨工程师 TaskAuthorization 只传结构化 scope/receipt；它不能授予对方机器的
+  HostPermission。
 - 离线积压、重连、重复投递和跨时区 handoff。
 - 生产 Relay 的远程治理闭环、审计记录、基本配额和滥用保护。
 - 新用户在 10 分钟内完成安装、频道信任和第一次任务，不需要项目维护者远程排错。
@@ -110,7 +134,8 @@
 
 ### 必须补齐
 
-- 从前两个 milestone 的真实 trace 中固化 `repo-maintenance/v1`，而不是凭空设计通用协议。
+- 从前两个 milestone 的真实 trace 中形成社区可独立实现和维护的
+  `repo-maintenance/v1` extension，而不是把它写入 AgentComm core。
 - 多任务 claim、owner、依赖、冲突检测和取消语义。
 - 团队级角色和审批路由；agent 不能把一个工程师的授权转交给另一个工程师。
 - 人类可读项目页面：active agents、任务状态、阻塞、artifact、审批和历史。
@@ -138,23 +163,25 @@
 把 Milestone 1–3 中脱敏的真实任务整理为 benchmark，对比：
 
 ```text
-collaboration profile × agent harness × model/configuration
+application extension/client × agent harness × model/configuration
 ```
 
 transport 可靠性和性能单独测量，不把网络失败算成模型能力失败。
 
 ### 必须补齐
 
-- 版本化 collaboration profile、conformance runner 和 trace replay。
+- 版本化 application extension、conformance runner 和 trace replay。
+- transport、protocol conformance、end-to-end 三套指标分开报告。
 - repo task 数据集、自动 evaluator、成本/耗时/人工中断指标。
 - single-agent、manager-workers、two-engineer 三组基线。
-- workflow、swarm、debate、auth grant 只有在真实 workload 有需要时才成为正式 profile。
+- workflow、swarm、debate、auth grant 只有在真实 workload 有需要时才形成社区
+  application extension。
 
 ### 完成线
 
 - benchmark 能回答“提升来自协议、harness 还是模型”，而不只是给总分。
 - 第三方仅凭公开协议和 fixture 可以复放至少一个完整协作任务。
-- 新 profile 必须在真实任务上优于或补足现有方式，才能进入正式产品。
+- 新 application/client 必须在真实任务上优于或补足现有方式，才进入推荐社区索引。
 
 ---
 
@@ -163,3 +190,9 @@ transport 可靠性和性能单独测量，不把网络失败算成模型能力�
 当前只启动 **Milestone 1**。Milestone 1 没有完成前，不投入 NATS、多区域、通用 swarm/debate 或大规模公开频道建设。
 
 Milestone 2 是第一个生产产品验证点；它的完成标准不是“Relay 已部署”，而是“两个真实工程师通过生产 Relay 连续完成 3 个真实 PR”。
+
+应用协议扩展的近期范围也受同一约束：先用独立 reference application 完成
+`manager-workers/v1`，再从 Milestone 2/3 真实 trace 形成社区维护的
+`repo-maintenance/v1`。AgentComm 只提供声明式规范、client SDK 和 conformance，不提前
+发布一个可以远程下载任意协议代码的插件市场，也不在没有 workload 证据时实现通用
+workflow/swarm/debate。

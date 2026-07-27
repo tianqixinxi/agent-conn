@@ -1,4 +1,10 @@
 import { join } from 'node:path'
+import {
+  ApplicationConsumerRegistry,
+  ApplicationRuntime,
+  type VerifiedApplicationEvent,
+} from '@agent-comm/client-sdk'
+import { isAgentCommError } from '@agent-comm/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openHubDb, openStore } from '../src/store/index.js'
 import { createTmpWorkspace } from './helpers/tmp-profile.js'
@@ -135,6 +141,139 @@ describe('store/openStore (private store repos)', () => {
       expect(store.syncState.has('daily')).toBe(true)
       store.syncState.set('daily', 9)
       expect(store.syncState.get('daily')).toBe(9)
+    } finally {
+      store.close()
+    }
+  })
+
+  it('persists application reducer state and effect journal independently from inbox ACK', async () => {
+    const path = join(ws.rootDir, 'application.db')
+    const extensionUri = 'https://community.example/manager-workers'
+    const registry = new ApplicationConsumerRegistry()
+    registry.register({
+      id: 'manager-workers',
+      version: '1.0.0',
+      supports: [{ uri: extensionUri, version: '1.0.0' }],
+      handle: (_event, context) => ({
+        status: 'handled',
+        state: { handled: ((context.state as { handled?: number } | undefined)?.handled ?? 0) + 1 },
+        taskState: 'active',
+        effects: [
+          {
+            type: 'publish',
+            to: 'worker',
+            selector: { uri: extensionUri, version: '1.0.0', eventType: 'task.assigned' },
+            body: { taskId: 'task-1' },
+          },
+        ],
+      }),
+    })
+    const event: VerifiedApplicationEvent = {
+      messageId: 'm-app-1',
+      channelId: 'channel-1',
+      from: 'manager',
+      selector: { uri: extensionUri, version: '1.0.0', eventType: 'task.requested' },
+      body: { taskId: 'task-1' },
+      contextId: 'context-1',
+      taskId: 'task-1',
+    }
+
+    const first = openStore(path)
+    const runtime = new ApplicationRuntime({
+      runtimeInstanceId: 'r-old',
+      profilePrincipal: 'node-manager',
+      registry,
+      store: first.applicationRuntime,
+    })
+    await runtime.process(event)
+    first.applicationRuntime.markEffect('effect:m-app-1:0', 'executing', {
+      runtimeInstanceId: 'r-old',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    first.close()
+
+    const reopened = openStore(path)
+    try {
+      new ApplicationRuntime({
+        runtimeInstanceId: 'r-new',
+        profilePrincipal: 'node-manager',
+        registry,
+        store: reopened.applicationRuntime,
+      })
+      expect(
+        reopened.applicationRuntime.getState({
+          profilePrincipal: 'node-manager',
+          channelId: 'channel-1',
+          extensionUri,
+          contextId: 'context-1',
+        }),
+      ).toMatchObject({
+        state: { handled: 1 },
+        lastEventId: 'm-app-1',
+      })
+      expect(reopened.applicationRuntime.listEffects(['needs-reconciliation'])).toHaveLength(1)
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('persists typed task authorization receipts and makes the decision immutable', () => {
+    const store = openStore(join(ws.rootDir, 'authorization.db'))
+    try {
+      expect(
+        store.taskAuthorizations.create({
+          authorizationId: 'auth-test-1',
+          messageId: 'm-task-1',
+          taskId: 'task-1',
+          contextId: 'ctx-1',
+          channelId: 'channel-1',
+          requestedBy: 'bob',
+          prompt: 'Allow deploy?',
+          scope: { action: 'deploy', environment: 'production' },
+          status: 'pending',
+          requestedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      ).toBe(true)
+
+      const approved = store.taskAuthorizations.decide('auth-test-1', {
+        authorizationId: 'auth-test-1',
+        taskId: 'task-1',
+        scope: { action: 'deploy', environment: 'production' },
+        decision: 'approve',
+        decidedAt: '2026-01-01T00:00:01.000Z',
+        source: 'local-host',
+        assurance: 'host-reported',
+      })
+      expect(approved).toMatchObject({
+        status: 'approved',
+        receipt: { decision: 'approve', source: 'local-host' },
+      })
+      expect(
+        store.taskAuthorizations.decide('auth-test-1', {
+          authorizationId: 'auth-test-1',
+          taskId: 'task-1',
+          scope: { action: 'deploy', environment: 'production' },
+          decision: 'approve',
+          decidedAt: '2026-01-01T00:00:02.000Z',
+          source: 'local-host',
+          assurance: 'host-reported',
+        }),
+      ).toEqual(approved)
+
+      try {
+        store.taskAuthorizations.decide('auth-test-1', {
+          authorizationId: 'auth-test-1',
+          taskId: 'task-1',
+          scope: { action: 'deploy', environment: 'production' },
+          decision: 'reject',
+          decidedAt: '2026-01-01T00:00:03.000Z',
+          source: 'local-host',
+          assurance: 'host-reported',
+        })
+        throw new Error('expected immutable decision failure')
+      } catch (error) {
+        expect(isAgentCommError(error, 'AUTHORIZATION_ALREADY_DECIDED')).toBe(true)
+      }
     } finally {
       store.close()
     }

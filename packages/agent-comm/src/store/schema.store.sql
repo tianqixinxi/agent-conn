@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS identity (
 
 -- 我加入的频道(镜像;成员表权威在家)
 CREATE TABLE IF NOT EXISTS channels (
+  -- `name` remains the opaque route identity for compatibility with the original schema.
   name TEXT PRIMARY KEY,
+  channel_name TEXT,
   home TEXT NOT NULL,                -- 'local:<abs>' | https URL
   display_name TEXT,
   mode TEXT NOT NULL DEFAULT 'auto', -- auto|intercept|paused(镜像值)
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS messages (
   reply_by TEXT,
   hop INTEGER NOT NULL DEFAULT 0,
   content_type TEXT,
+  runtime_instance_id TEXT,
   payload_json TEXT NOT NULL,        -- 不透明(I1);JSON.stringify(payload)
   status TEXT NOT NULL,              -- pending|held|delivered|dropped
   injected_by_human INTEGER NOT NULL DEFAULT 0,
@@ -67,6 +70,82 @@ CREATE TABLE IF NOT EXISTS inbox (
   consumed_at TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_inbox_consumed ON inbox(consumed_at);
+
+-- Application/client state is independent from transport inbox consumption (D20).
+CREATE TABLE IF NOT EXISTS application_runtime_instances (
+  runtime_instance_id TEXT PRIMARY KEY,
+  profile_principal TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  stopped_at TEXT
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS application_states (
+  profile_principal TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  extension_uri TEXT NOT NULL,
+  context_id TEXT NOT NULL,
+  consumer_id TEXT NOT NULL,
+  consumer_version TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  task_state TEXT NOT NULL,
+  last_event_id TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_principal, channel_id, extension_uri, context_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_application_states_channel ON application_states(channel_id, task_state);
+
+CREATE TABLE IF NOT EXISTS application_events (
+  message_id TEXT PRIMARY KEY,
+  channel_id TEXT NOT NULL,
+  extension_uri TEXT NOT NULL,
+  extension_version TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  context_id TEXT,
+  task_id TEXT,
+  from_alias TEXT NOT NULL,
+  event_json TEXT NOT NULL,
+  source_runtime_instance_id TEXT,
+  processing_runtime_instance_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  stale INTEGER NOT NULL DEFAULT 0,
+  consumer_id TEXT,
+  consumer_version TEXT,
+  error TEXT,
+  original_ts TEXT,
+  recorded_at TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_application_events_context
+  ON application_events(channel_id, extension_uri, context_id, recorded_at);
+
+CREATE TABLE IF NOT EXISTS application_effects (
+  effect_id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES application_events(message_id) ON DELETE CASCADE,
+  effect_index INTEGER NOT NULL,
+  effect_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  runtime_instance_id TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  UNIQUE(message_id, effect_index)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_application_effects_status ON application_effects(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS task_authorizations (
+  authorization_id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  context_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  requested_by TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  scope_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  requested_at TEXT NOT NULL,
+  receipt_json TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_task_authorizations_pending
+  ON task_authorizations(channel_id, status, requested_at);
 
 -- 每频道与家的同步游标(§2.4)
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -105,5 +184,6 @@ CREATE TABLE IF NOT EXISTS audit (
   from_alias TEXT,
   to_target TEXT,
   actor TEXT NOT NULL,               -- 'human' | 'agent:<alias>'
+  runtime_instance_id TEXT,
   detail TEXT
 ) STRICT;

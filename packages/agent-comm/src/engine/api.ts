@@ -8,7 +8,7 @@ import type {
   Message,
   NodeIdentity,
   Peer,
-} from '@agent-comm/protocol'
+} from '@agent-comm/core'
 import type { RelayDriverFactory, TransportBindingFactory } from '../transport/api.js'
 
 export type {
@@ -42,6 +42,7 @@ export interface SendInput {
   to: string // Alias | '*'
   payload: unknown
   contentType?: string | undefined
+  runtimeInstanceId?: string | undefined
   replyTo?: string | undefined
   replyBy?: string | undefined
   traceId?: string | undefined
@@ -87,6 +88,7 @@ export interface CreateInviteInput {
 
 export interface ConnectResult {
   channel: string
+  channelId?: string | undefined
   myAlias: string
   peers: Peer[]
 }
@@ -108,6 +110,8 @@ export interface Engine {
   createChannel(
     input: {
       name: string
+      /** Optional explicit opaque route identity. Without it, the alias is used once, then a fresh id is allocated on collision. */
+      channelId?: string | undefined
       alias: string
       displayName?: string | undefined
       mode?: ChannelMode | undefined

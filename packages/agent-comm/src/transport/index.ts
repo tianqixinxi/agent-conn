@@ -5,4 +5,4 @@ export type {
   TransportBindingFactory,
   TransportBindingFactoryInput,
   TransportKind,
-} from './api.js'
+} from '@agent-comm/delivery'

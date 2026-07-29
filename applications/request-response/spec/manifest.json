@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1",
+  "uri": "https://agentcomm.dev/community/request-response/v1",
+  "name": "Request and response",
+  "version": "1.0.0",
+  "description": "A minimal portable request, response, failure, and cancellation protocol.",
+  "license": "Apache-2.0",
+  "baseProtocol": "a2a/1.0",
+  "mediaTypes": ["application/json"],
+  "documentation": "https://agentcomm.dev/community/request-response/v1/",
+  "conformanceFixtures": "https://agentcomm.dev/community/request-response/v1/conformance.json",
+  "compatibility": {
+    "major": 1,
+    "backwardCompatibleFrom": "1.0.0"
+  },
+  "eventSchemas": {
+    "request.created": {
+      "uri": "https://agentcomm.dev/community/request-response/v1/events.schema.json#/$defs/request_created"
+    },
+    "response.created": {
+      "uri": "https://agentcomm.dev/community/request-response/v1/events.schema.json#/$defs/response_created"
+    },
+    "request.failed": {
+      "uri": "https://agentcomm.dev/community/request-response/v1/events.schema.json#/$defs/request_failed"
+    },
+    "request.cancelled": {
+      "uri": "https://agentcomm.dev/community/request-response/v1/events.schema.json#/$defs/request_cancelled"
+    }
+  }
+}

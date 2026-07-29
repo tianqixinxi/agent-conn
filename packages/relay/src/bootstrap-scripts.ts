@@ -1,4 +1,4 @@
-const BOOTSTRAP_VERSION = '0.7.1'
+const BOOTSTRAP_VERSION = '0.8.0'
 const DEFAULT_ORIGIN = 'https://connect.meee1.com'
 const DEFAULT_MARKETPLACE = 'agent-comm'
 const DEFAULT_PLUGIN = 'agent-comm@agent-comm'
@@ -8,9 +8,9 @@ function shellSingleQuote(value: string): string {
 }
 
 /**
- * Small, auditable bootstrap served by the relay. It installs only the AgentComm launcher; the
- * launcher then uses Claude Code's own plugin manager, so plugin installation remains persistent
- * and visible in the active Claude profile.
+ * Small, auditable bootstrap served by the relay. It installs the launcher and
+ * the harness-neutral runtime CLI. Claude plugin installation remains a
+ * separate, persistent operation in the active Claude profile.
  */
 export function renderInstallerScript(origin: string): string {
   const baseUrl = origin.replace(/\/$/, '') || DEFAULT_ORIGIN
@@ -21,6 +21,7 @@ AGENTCOMM_BOOTSTRAP_VERSION=${shellSingleQuote(BOOTSTRAP_VERSION)}
 AGENTCOMM_DOWNLOAD_BASE=${shellSingleQuote(baseUrl)}
 INSTALL_DIR="\${AGENTCOMM_INSTALL_DIR:-$HOME/.local/bin}"
 TARGET="$INSTALL_DIR/agentcomm"
+LIB_DIR="\${AGENTCOMM_LIB_DIR:-$HOME/.local/lib/agentcomm}"
 
 if ! command -v curl >/dev/null 2>&1; then
   printf 'AgentComm installer: curl is required.\n' >&2
@@ -34,11 +35,31 @@ curl --fail --silent --show-error --location \
   "$AGENTCOMM_DOWNLOAD_BASE/bin/agentcomm" \
   --output "$TMP_DIR/agentcomm"
 bash -n "$TMP_DIR/agentcomm"
+for ASSET in agent-comm-cli.mjs schema.store.sql schema.hub.sql; do
+  curl --fail --silent --show-error --location \
+    "$AGENTCOMM_DOWNLOAD_BASE/bin/$ASSET" \
+    --output "$TMP_DIR/$ASSET"
+done
+command -v node >/dev/null 2>&1 || {
+  printf 'AgentComm installer: Node.js 22 or newer is required for the runtime daemon.\\n' >&2
+  exit 127
+}
+NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
+[ "$NODE_MAJOR" -ge 22 ] || {
+  printf 'AgentComm installer: Node.js 22 or newer is required; found %s.\\n' "$(node --version)" >&2
+  exit 1
+}
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$LIB_DIR"
 chmod 0755 "$TMP_DIR/agentcomm"
 mv "$TMP_DIR/agentcomm" "$TARGET"
+mv "$TMP_DIR/agent-comm-cli.mjs" "$LIB_DIR/main.js"
+mv "$TMP_DIR/schema.store.sql" "$LIB_DIR/schema.store.sql"
+mv "$TMP_DIR/schema.hub.sql" "$LIB_DIR/schema.hub.sql"
+chmod 0644 "$LIB_DIR/main.js" "$LIB_DIR/schema.store.sql" "$LIB_DIR/schema.hub.sql"
 
 printf 'AgentComm launcher %s installed at %s\n' "$AGENTCOMM_BOOTSTRAP_VERSION" "$TARGET" >&2
+printf 'AgentComm runtime installed at %s\n' "$LIB_DIR" >&2
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
   *)
@@ -66,6 +87,8 @@ AGENTCOMM_MARKETPLACE_SOURCE="\${AGENTCOMM_MARKETPLACE_SOURCE:-https://github.co
 AGENTCOMM_PLUGIN_ID="\${AGENTCOMM_PLUGIN_ID:-${DEFAULT_PLUGIN}}"
 AGENTCOMM_OFFICIAL_PLUGIN_ID="agent-comm@claude-plugins-official"
 AGENTCOMM_CHANNEL_POLICY="\${AGENTCOMM_CHANNEL_POLICY:-auto}"
+AGENTCOMM_LIB_DIR="\${AGENTCOMM_LIB_DIR:-$HOME/.local/lib/agentcomm}"
+AGENTCOMM_CLI="$AGENTCOMM_LIB_DIR/main.js"
 
 say() { printf '%s\n' "$*" >&2; }
 die() { say "AgentComm: $*"; exit 1; }
@@ -79,24 +102,56 @@ Usage:
   agentcomm install                 Persistently install the Claude Code plugin
   agentcomm update                  Update this launcher and the installed plugin
   agentcomm doctor                  Show the active Claude profile and AgentComm status
+  agentcomm app ...                 Manage community application protocols
+  agentcomm runtime ...             Register local Claude/Codex/process runtimes
+  agentcomm daemon ...              Run or inspect the durable runtime supervisor
+  agentcomm benchmark ...           Run layered benchmark suites
+  agentcomm core ...                Run the lower-level AgentComm CLI
   agentcomm version
 
 If open has no URL, AgentComm reads it from the terminal so the private key is not saved in shell history.
 USAGE
 }
 
-find_claude() {
+full_cli() {
+  command -v node >/dev/null 2>&1 || die "Node.js 22 or newer is required"
+  [ -f "$AGENTCOMM_CLI" ] \
+    || die "runtime CLI is missing; run curl -fsSL $AGENTCOMM_DOWNLOAD_BASE/install.sh | bash"
+  exec node --disable-warning=ExperimentalWarning "$AGENTCOMM_CLI" "$@"
+}
+
+install_runtime_assets() {
+  mkdir -p "$AGENTCOMM_LIB_DIR"
+  TMP_ASSET_DIR="$(mktemp -d "\${TMPDIR:-/tmp}/agentcomm-runtime.XXXXXX")"
+  for ASSET in agent-comm-cli.mjs schema.store.sql schema.hub.sql; do
+    curl --fail --silent --show-error --location \
+      "$AGENTCOMM_DOWNLOAD_BASE/bin/$ASSET" \
+      --output "$TMP_ASSET_DIR/$ASSET"
+  done
+  mv "$TMP_ASSET_DIR/agent-comm-cli.mjs" "$AGENTCOMM_CLI"
+  mv "$TMP_ASSET_DIR/schema.store.sql" "$AGENTCOMM_LIB_DIR/schema.store.sql"
+  mv "$TMP_ASSET_DIR/schema.hub.sql" "$AGENTCOMM_LIB_DIR/schema.hub.sql"
+  chmod 0644 "$AGENTCOMM_CLI" "$AGENTCOMM_LIB_DIR/schema.store.sql" "$AGENTCOMM_LIB_DIR/schema.hub.sql"
+  rmdir "$TMP_ASSET_DIR"
+}
+
+detect_claude() {
   if [ -n "\${AGENTCOMM_CLAUDE_BIN:-}" ]; then
     CLAUDE_BIN="$AGENTCOMM_CLAUDE_BIN"
   elif command -v claude >/dev/null 2>&1; then
     CLAUDE_BIN="$(command -v claude)"
   else
-    die "Claude Code was not found. Install it first, then run agentcomm open again."
+    return 1
   fi
   if command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
     CLAUDE_BIN="$(command -v "$CLAUDE_BIN")"
   fi
-  [ -x "$CLAUDE_BIN" ] || die "Claude Code is not executable: $CLAUDE_BIN"
+  [ -x "$CLAUDE_BIN" ]
+}
+
+find_claude() {
+  detect_claude \
+    || die "Claude Code was not found. Install it first, then run agentcomm open again."
 }
 
 plugin_list() {
@@ -267,7 +322,6 @@ command_create_public() {
 }
 
 command_update() {
-  find_claude
   TMP_FILE="$(mktemp "\${TMPDIR:-/tmp}/agentcomm-update.XXXXXX")"
   trap 'rm -f "$TMP_FILE"' EXIT HUP INT TERM
   curl --fail --silent --show-error --location "$AGENTCOMM_DOWNLOAD_BASE/bin/agentcomm" --output "$TMP_FILE"
@@ -275,31 +329,43 @@ command_update() {
   chmod 0755 "$TMP_FILE"
   mv "$TMP_FILE" "$0"
   trap - EXIT HUP INT TERM
+  install_runtime_assets
 
-  select_plugin
-  if [ "$ACTIVE_PLUGIN_ID" = "$AGENTCOMM_OFFICIAL_PLUGIN_ID" ]; then
-    "$CLAUDE_BIN" plugin update "$ACTIVE_PLUGIN_ID" --scope user
-  elif [ -n "$ACTIVE_PLUGIN_ID" ]; then
-    "$CLAUDE_BIN" plugin marketplace update "$AGENTCOMM_MARKETPLACE"
-    "$CLAUDE_BIN" plugin update "$ACTIVE_PLUGIN_ID" --scope user
+  if detect_claude; then
+    select_plugin
+    if [ "$ACTIVE_PLUGIN_ID" = "$AGENTCOMM_OFFICIAL_PLUGIN_ID" ]; then
+      "$CLAUDE_BIN" plugin update "$ACTIVE_PLUGIN_ID" --scope user
+    elif [ -n "$ACTIVE_PLUGIN_ID" ]; then
+      "$CLAUDE_BIN" plugin marketplace update "$AGENTCOMM_MARKETPLACE"
+      "$CLAUDE_BIN" plugin update "$ACTIVE_PLUGIN_ID" --scope user
+    fi
   fi
-  say "AgentComm launcher and installed plugin are up to date."
+  say "AgentComm launcher and runtime are up to date."
 }
 
 command_doctor() {
-  find_claude
-  select_plugin
   printf 'launcher: %s\n' "$AGENTCOMM_LAUNCHER_VERSION"
-  printf 'claude: %s\n' "$CLAUDE_BIN"
-  printf 'profile: %s\n' "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  if claude_is_authenticated; then
-    printf 'auth: logged-in\n'
+  if detect_claude; then
+    select_plugin
+    printf 'claude: %s\n' "$CLAUDE_BIN"
+    printf 'profile: %s\n' "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+    if claude_is_authenticated; then
+      printf 'auth: logged-in\n'
+    else
+      printf 'auth: not-logged-in\n'
+    fi
+    printf 'plugin: %s\n' "\${ACTIVE_PLUGIN_ID:-not installed}"
+    printf 'channel-mode: %s\n' "\${CHANNEL_MODE:-unavailable}"
   else
-    printf 'auth: not-logged-in\n'
+    printf 'claude: not found\n'
+    printf 'plugin: not applicable\n'
   fi
-  printf 'plugin: %s\n' "\${ACTIVE_PLUGIN_ID:-not installed}"
-  printf 'channel-mode: %s\n' "\${CHANNEL_MODE:-unavailable}"
   printf 'relay: %s\n' "\${AGENT_COMM_RELAY_URL:-https://connect.meee1.com}"
+  if [ -f "$AGENTCOMM_CLI" ]; then
+    printf 'runtime-cli: %s\n' "$AGENTCOMM_CLI"
+  else
+    printf 'runtime-cli: not installed\n'
+  fi
 }
 
 COMMAND="\${1:-}"
@@ -310,6 +376,8 @@ case "$COMMAND" in
   install) ensure_plugin ;;
   update) command_update ;;
   doctor) command_doctor ;;
+  app|runtime|daemon|benchmark) full_cli "$@" ;;
+  core) shift; full_cli "$@" ;;
   version|--version|-v) printf '%s\n' "$AGENTCOMM_LAUNCHER_VERSION" ;;
   help|--help|-h|'') usage ;;
   http://*|https://*) command_open open "$@" ;;

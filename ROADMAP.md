@@ -2,7 +2,23 @@
 
 > Milestone 不以“写完某个模块”为完成，而以“真实用户完成真实工作”为完成。代码合并、测试通过和部署上线只是前置条件。
 
-当前 v0.4.x 已经证明两个 Claude Code runtime 可以通过 Channel 连接、委派和回复，但还没有证明它能替代人工复制链接、转述任务、轮询进度和汇总结果。
+早期 v0.4.x 已经证明两个 Claude Code runtime 可以通过 Channel 连接、委派和回复；当前
+v0.8.0 则完成了下列可扩展 foundation，但还没有证明它能在真实 coding team 中完全替代
+人工拆解任务、处理 worktree/冲突和汇总 PR 结果。
+
+## P0 foundation（已实现）
+
+- runtime registry、显式 channelId 绑定、trusted auto-resume、heartbeat 和
+  launchd/systemd 用户服务；
+- Claude Native/Print、Codex App Server/Exec、通用 process adapters 与 outcome 回传；
+- application registry/catalog、create/validate/test/search/install/inspect/enable/update/
+  disable/remove 生命周期；
+- application reducer `resume`：Harness 结果由社区协议翻译为协议原生事件；
+- `manager-workers/v1` 与 `request-response/v1` reference applications；
+- 本机双 runtime 跨 Harness A2A E2E 与 application protocol E2E；
+- transport/application/harness/model/system 五层 benchmark runner、suite 与比较报告。
+
+这完成的是可扩展产品地基，不代表 Milestone 1 的真实 coding team 验收已经完成。
 
 ## 架构收口：进入 Milestone 1 前的地基
 
@@ -44,8 +60,9 @@ foundation 通过不等于产品 milestone 通过。
 
 ### 必须补齐
 
-- 本机 runtime registry：alias、能力、状态、当前任务、worktree、last seen。
-- local harness：启动、接入、停止和重启 Claude worker。
+- 本机 runtime registry 已覆盖身份、Harness、显式频道、状态和 last seen；仍需补当前
+  coding task/worktree/artifact 的产品视图。
+- local harness 已覆盖启动、接入、停止、重启和结果回传；仍需补隔离 worktree 生命周期。
 - manager 可以按能力选择空闲 worker，而不是让用户指定 profile/messageId/channel。
 - worker 自动接收和执行安全任务；进程重启后恢复未完成任务。
 - `manager-workers/v1` 作为第一个独立 reference application，使用公开 extension 规范和

@@ -24,6 +24,7 @@
     "agent-comm": "node --disable-warning=ExperimentalWarning --import tsx packages/agent-comm/src/main.ts",
     "build:cli": "rm -rf packages/agent-comm/dist && esbuild packages/agent-comm/src/main.ts --bundle --format=esm --platform=node --target=node22 --outdir=packages/agent-comm/dist --splitting --minify-whitespace --log-level=warning --banner:js='import { createRequire as __agentCommCr } from \"node:module\"; const require = __agentCommCr(import.meta.url);' && perl -pi -e 's/[ \\t]+$//' packages/agent-comm/dist/*.js && cp packages/agent-comm/src/store/schema.store.sql packages/agent-comm/src/store/schema.hub.sql packages/agent-comm/dist/",
     "build:plugin": "pnpm build:cli && rm -rf plugin/dist && mkdir -p plugin/dist && cp packages/agent-comm/dist/* plugin/dist/ && chmod +x plugin/bin/ac",
+    "benchmark:p0": "pnpm agent-comm benchmark validate benchmarks/p0-suite.json",
     "relay": "node --disable-warning=ExperimentalWarning --import tsx packages/relay/src/main.ts"
   },
   "devDependencies": {

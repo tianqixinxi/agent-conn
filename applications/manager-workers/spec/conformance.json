@@ -1,0 +1,113 @@
+[
+  {
+    "name": "manager-assigns-reviews-and-approves",
+    "extension": {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1",
+      "version": "1.0.0"
+    },
+    "events": [
+      {
+        "eventType": "worker.registered",
+        "body": {
+          "worker": "worker",
+          "capabilities": ["repository-review"]
+        }
+      },
+      {
+        "eventType": "task.requested",
+        "body": {
+          "taskId": "task-1",
+          "goal": "Review README",
+          "worker": "worker"
+        }
+      },
+      {
+        "eventType": "task.progress",
+        "body": {
+          "taskId": "task-1",
+          "progress": 50
+        }
+      },
+      {
+        "eventType": "task.completed",
+        "body": {
+          "taskId": "task-1",
+          "result": {
+            "summary": "three verified points"
+          }
+        }
+      },
+      {
+        "eventType": "review.approved",
+        "body": {
+          "taskId": "task-1",
+          "reviewer": "manager",
+          "note": "accepted"
+        }
+      }
+    ],
+    "expected": {
+      "state": {
+        "workers": {
+          "worker": {
+            "capabilities": ["repository-review"],
+            "status": "available"
+          }
+        },
+        "tasks": {
+          "task-1": {
+            "taskId": "task-1",
+            "goal": "Review README",
+            "status": "approved",
+            "assignedTo": "worker",
+            "progress": 100,
+            "result": {
+              "summary": "three verified points"
+            },
+            "review": "accepted"
+          }
+        }
+      },
+      "taskState": "completed",
+      "effects": [
+        {
+          "type": "publish",
+          "to": "worker",
+          "selector": {
+            "uri": "https://agentcomm.dev/community/manager-workers/v1",
+            "version": "1.0.0",
+            "eventType": "task.assigned"
+          },
+          "body": {
+            "taskId": "task-1",
+            "goal": "Review README",
+            "worker": "worker"
+          },
+          "contextId": "fixture:manager-assigns-reviews-and-approves"
+        },
+        {
+          "type": "publish",
+          "to": "worker",
+          "selector": {
+            "uri": "https://agentcomm.dev/community/manager-workers/v1",
+            "version": "1.0.0",
+            "eventType": "review.requested"
+          },
+          "body": {
+            "taskId": "task-1",
+            "reviewer": "manager",
+            "note": "verify completion"
+          },
+          "contextId": "fixture:manager-assigns-reviews-and-approves"
+        },
+        {
+          "type": "complete",
+          "result": {
+            "summary": "three verified points"
+          }
+        }
+      ],
+      "eventStatuses": ["reduced", "reduced", "reduced", "reduced", "reduced"]
+    }
+  }
+]

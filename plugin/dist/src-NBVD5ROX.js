@@ -1,0 +1,2 @@
+import { createRequire as __agentCommCr } from "node:module"; const require = __agentCommCr(import.meta.url);
+import{MANAGER_WORKERS_EVENT_TYPES,MANAGER_WORKERS_EXTENSION_URI,MANAGER_WORKERS_VERSION,createManagerWorkersConsumer,managerWorkersEvent,managerWorkersManifest}from"./chunk-O4YYOF3V.js";import"./chunk-HTG2WBB6.js";import"./chunk-DYL7WMZF.js";import"./chunk-I6WTBJ3K.js";export{MANAGER_WORKERS_EVENT_TYPES,MANAGER_WORKERS_EXTENSION_URI,MANAGER_WORKERS_VERSION,createManagerWorkersConsumer,managerWorkersEvent,managerWorkersManifest};

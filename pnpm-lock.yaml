@@ -39,6 +39,18 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  applications/request-response:
+    dependencies:
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../../packages/application-spec
+      '@agent-comm/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/a2a-binding:
     dependencies:
       '@a2a-js/sdk':
@@ -56,9 +68,15 @@ importers:
       '@agent-comm/a2a-binding':
         specifier: workspace:*
         version: link:../a2a-binding
+      '@agent-comm/application-catalog':
+        specifier: workspace:*
+        version: link:../application-catalog
       '@agent-comm/application-spec':
         specifier: workspace:*
         version: link:../application-spec
+      '@agent-comm/benchmark':
+        specifier: workspace:*
+        version: link:../benchmark
       '@agent-comm/client-sdk':
         specifier: workspace:*
         version: link:../client-sdk
@@ -68,9 +86,30 @@ importers:
       '@agent-comm/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@agent-comm/harness-claude-code':
+        specifier: workspace:*
+        version: link:../harness-claude-code
+      '@agent-comm/harness-codex':
+        specifier: workspace:*
+        version: link:../harness-codex
+      '@agent-comm/ingress-process':
+        specifier: workspace:*
+        version: link:../ingress-process
+      '@agent-comm/manager-workers':
+        specifier: workspace:*
+        version: link:../../applications/manager-workers
       '@agent-comm/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agent-comm/request-response':
+        specifier: workspace:*
+        version: link:../../applications/request-response
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
+      '@agent-comm/runtime-supervisor':
+        specifier: workspace:*
+        version: link:../runtime-supervisor
       '@modelcontextprotocol/sdk':
         specifier: ^1.17.0
         version: 1.29.0(zod@4.4.3)
@@ -81,7 +120,22 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/application-catalog:
+    dependencies:
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../application-spec
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/application-spec:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/benchmark:
     dependencies:
       zod:
         specifier: ^4.4.3
@@ -119,9 +173,33 @@ importers:
 
   packages/harness-claude-code:
     dependencies:
-      agent-comm:
+      '@agent-comm/runtime-ingress':
         specifier: workspace:*
-        version: link:../agent-comm
+        version: link:../runtime-ingress
+
+  packages/harness-codex:
+    dependencies:
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
+
+  packages/ingress-polling:
+    dependencies:
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
+
+  packages/ingress-process:
+    dependencies:
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
+
+  packages/ingress-webhook:
+    dependencies:
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
 
   packages/protocol:
     dependencies:
@@ -134,6 +212,9 @@ importers:
 
   packages/relay:
     dependencies:
+      '@agent-comm/application-spec':
+        specifier: workspace:*
+        version: link:../application-spec
       '@agent-comm/core':
         specifier: workspace:*
         version: link:../core
@@ -146,6 +227,17 @@ importers:
       hono:
         specifier: ^4.8.0
         version: 4.12.30
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/runtime-ingress: {}
+
+  packages/runtime-supervisor:
+    dependencies:
+      '@agent-comm/runtime-ingress':
+        specifier: workspace:*
+        version: link:../runtime-ingress
       zod:
         specifier: ^4.4.3
         version: 4.4.3

@@ -115,6 +115,23 @@ describe('ApplicationConsumerRegistry', () => {
     expect(handle).not.toHaveBeenCalled()
     expect(result.status).toBe('unsupported')
   })
+
+  it('selects a consumer only for its explicitly bound channel', async () => {
+    const first = vi.fn(() => ({ status: 'handled' as const, effects: [] }))
+    const second = vi.fn(() => ({ status: 'handled' as const, effects: [] }))
+    const registry = new ApplicationConsumerRegistry()
+    const supports = [{ uri: extensionUri, version: '1.1.0' }]
+    registry.register({ id: 'scoped', supports, handle: first }, { channels: ['channel-1'] })
+    registry.register({ id: 'scoped', supports, handle: second }, { channels: ['channel-2'] })
+
+    await registry.dispatch(event({ channelId: 'channel-2' }), {
+      ...consumerContext(),
+      channelId: 'channel-2',
+    })
+
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledOnce()
+  })
 })
 
 describe('ApplicationClient', () => {

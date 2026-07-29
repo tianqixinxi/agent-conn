@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AgentCommError } from '@agent-comm/protocol'
@@ -237,5 +237,88 @@ describe('runCli doctor', () => {
     expect(parsed.ok).toBe(true)
     expect(Array.isArray(parsed.checks)).toBe(true)
     expect(parsed.checks.length).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('runCli P0 application and runtime lifecycle', () => {
+  let rootDir: string
+  let out: string[]
+  let err: string[]
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), 'agent-comm-cli-p0-'))
+    out = []
+    err = []
+  })
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true })
+  })
+
+  async function run(argv: string[]): Promise<void> {
+    await runCli(argv, {
+      rootDir,
+      stdout: (value) => out.push(value),
+      stderr: (value) => err.push(value),
+    })
+    expect(err.join('')).toBe('')
+    expect(process.exitCode).toBe(0)
+  }
+
+  it('creates, installs, binds, inspects, and updates a community protocol', async () => {
+    const sourceV1 = join(rootDir, 'pair-review-v1')
+    const uri = 'https://example.test/pair-review/v1'
+    await run(['app', 'create', sourceV1, '--name', 'Pair Review', '--uri', uri])
+    await run(['app', 'install', sourceV1])
+    await run(['app', 'enable', uri, '--channel', 'c-review', '--config', '{"role":"reviewer"}'])
+    out.length = 0
+    await run(['--json', 'app', 'inspect', uri])
+    const inspected = JSON.parse(out.join('')) as {
+      installed: { enabled: { channelId: string }[] }
+    }
+    expect(inspected.installed.enabled[0]?.channelId).toBe('c-review')
+
+    const sourceV2 = join(rootDir, 'pair-review-v2')
+    await run(['app', 'create', sourceV2, '--name', 'Pair Review', '--uri', uri])
+    const manifestPath = join(sourceV2, 'agentcomm.application.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    manifest.version = '1.1.0'
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    out.length = 0
+    await run(['--json', 'app', 'update', uri, '--source', sourceV2])
+    const updated = JSON.parse(out.join('')) as {
+      version: string
+      enabled: { channelId: string }[]
+    }
+    expect(updated.version).toBe('1.1.0')
+    expect(updated.enabled[0]?.channelId).toBe('c-review')
+  })
+
+  it('registers a trusted runtime against explicit opaque channel ids', async () => {
+    await run([
+      'runtime',
+      'add',
+      'reviewer',
+      '--channel',
+      'c-one',
+      'c-two',
+      '--harness',
+      'codex-exec',
+      '--runtime-profile',
+      'bob',
+      '--trusted-auto-resume',
+    ])
+    out.length = 0
+    await run(['--json', 'runtime', 'list'])
+    const result = JSON.parse(out.join('')) as {
+      registrations: { id: string; channels: string[]; trustedAutoResume: boolean }[]
+    }
+    expect(result.registrations).toEqual([
+      expect.objectContaining({
+        id: 'reviewer',
+        channels: ['c-one', 'c-two'],
+        trustedAutoResume: true,
+      }),
+    ])
   })
 })

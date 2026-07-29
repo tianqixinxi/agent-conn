@@ -1,0 +1,13 @@
+{
+  "name": "@agent-comm/application-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-comm/application-spec": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentcomm.dev/community/request-response/v1/events.schema.json",
+  "$defs": {
+    "request_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "prompt"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "context": {}
+      }
+    },
+    "response_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "result"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "result": {}
+      }
+    },
+    "request_failed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "error"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "error": { "type": "string", "minLength": 1 }
+      }
+    },
+    "request_cancelled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId"],
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

@@ -13,15 +13,25 @@
     "agent-comm": "./src/main.ts"
   },
   "exports": {
-    "./channel": "./src/mcp/channel.ts"
+    "./channel": "./src/mcp/channel.ts",
+    "./runtime-ingress": "./src/runtime/ingress-runtime.ts"
   },
   "dependencies": {
+    "@agent-comm/application-catalog": "workspace:*",
     "@agent-comm/application-spec": "workspace:*",
     "@agent-comm/a2a-binding": "workspace:*",
+    "@agent-comm/benchmark": "workspace:*",
     "@agent-comm/client-sdk": "workspace:*",
     "@agent-comm/core": "workspace:*",
     "@agent-comm/delivery": "workspace:*",
+    "@agent-comm/harness-claude-code": "workspace:*",
+    "@agent-comm/harness-codex": "workspace:*",
+    "@agent-comm/ingress-process": "workspace:*",
+    "@agent-comm/manager-workers": "workspace:*",
     "@agent-comm/protocol": "workspace:*",
+    "@agent-comm/request-response": "workspace:*",
+    "@agent-comm/runtime-ingress": "workspace:*",
+    "@agent-comm/runtime-supervisor": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "commander": "^15.0.0",
     "zod": "^4.4.3"

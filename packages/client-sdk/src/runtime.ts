@@ -1,4 +1,9 @@
-import type { ApplicationConsumerRegistry, ApplicationEffect, VerifiedApplicationEvent } from './index.js'
+import type {
+  ApplicationConsumerRegistry,
+  ApplicationEffect,
+  ApplicationHarnessOutcome,
+  VerifiedApplicationEvent,
+} from './index.js'
 
 export type ApplicationTaskState =
   | 'active'
@@ -233,7 +238,7 @@ export class ApplicationRuntime {
         effects: [],
       }
     }
-    const resolved = this.#registry.resolve(event.selector)
+    const resolved = this.#registry.resolve(event.selector, event.channelId)
     if (!resolved) {
       const { duplicate } = this.#store.recordEvent({
         event,
@@ -311,6 +316,93 @@ export class ApplicationRuntime {
         recordedAt,
       })
       return { status: 'failed', duplicate, autoAck: false, error: message, effects: [] }
+    }
+  }
+
+  async resume(
+    messageId: string,
+    outcome: ApplicationHarnessOutcome,
+  ): Promise<ApplicationProcessResult | undefined> {
+    const stored = this.#store.getEvent(messageId)
+    if (stored?.status !== 'reduced') return undefined
+    const source = stored.event
+    const resolved = this.#registry.resolve(source.selector, source.channelId)
+    if (!resolved?.consumer.resume) return undefined
+    const key = eventKey(this.profilePrincipal, source)
+    const current = this.#store.getState(key)
+    if (!current || TERMINAL_APPLICATION_TASK_STATES.has(current.taskState)) return undefined
+    const outcomeEvent: VerifiedApplicationEvent = {
+      ...source,
+      messageId: `${messageId}:harness-outcome`,
+      from: this.profilePrincipal,
+      body: outcome,
+      receivedAt: this.#now().toISOString(),
+      sourceRuntimeInstanceId: this.runtimeInstanceId,
+    }
+    const existing = this.#store.getEvent(outcomeEvent.messageId)
+    if (existing) {
+      return {
+        status: 'reduced',
+        duplicate: true,
+        autoAck: true,
+        taskState: this.#store.getState(key)?.taskState ?? current.taskState,
+        consumerStatus: 'handled',
+        effects: [],
+      }
+    }
+    try {
+      const result = await resolved.consumer.resume(source, outcome, {
+        runtimeId: this.runtimeInstanceId,
+        profilePrincipal: this.profilePrincipal,
+        channelId: source.channelId,
+        extensionUri: source.selector.uri,
+        contextId: key.contextId,
+        state: current.state,
+        taskState: current.taskState,
+        stale: false,
+      })
+      const recordedAt = this.#now().toISOString()
+      const taskState = result.taskState ?? current.taskState
+      const committed = this.#store.commitReduction({
+        key,
+        event: outcomeEvent,
+        runtimeInstanceId: this.runtimeInstanceId,
+        stale: false,
+        consumerId: resolved.consumer.id,
+        consumerVersion: resolved.consumer.version ?? '0.0.0',
+        state: Object.hasOwn(result, 'state') ? result.state : current.state,
+        taskState,
+        effects: result.effects,
+        recordedAt,
+      })
+      for (const effect of this.#store.listEffects(['pending'])) {
+        if (effect.messageId !== messageId || effect.effect.type !== 'request-input') continue
+        this.#store.markEffect(effect.effectId, 'applied', {
+          runtimeInstanceId: this.runtimeInstanceId,
+          updatedAt: recordedAt,
+        })
+      }
+      return {
+        status: 'reduced',
+        duplicate: committed.duplicate,
+        autoAck: true,
+        taskState,
+        consumerStatus: result.status,
+        effects: committed.effects,
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const { duplicate } = this.#store.recordEvent({
+        event: outcomeEvent,
+        runtimeInstanceId: this.runtimeInstanceId,
+        status: 'failed',
+        stale: false,
+        consumerId: resolved.consumer.id,
+        consumerVersion: resolved.consumer.version ?? '0.0.0',
+        error: detail,
+        recordedAt: this.#now().toISOString(),
+      })
+      return { status: 'failed', duplicate, autoAck: false, error: detail, effects: [] }
     }
   }
 

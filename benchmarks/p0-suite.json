@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "name": "agentcomm-p0",
+  "description": "A common matrix for evaluating infrastructure, application protocols, harnesses, models, and the complete system.",
+  "cases": [
+    {
+      "id": "transport-directed-delivery",
+      "description": "Deliver one directed message exactly once through the selected transport.",
+      "layer": "transport",
+      "iterations": 100,
+      "warmup": 10,
+      "variant": {
+        "transport": "under-test"
+      },
+      "input": {
+        "operation": "directed-delivery",
+        "bytes": 1024
+      },
+      "thresholds": {
+        "successRate": 0.999,
+        "correctnessRate": 1,
+        "p95LatencyMs": 500
+      }
+    },
+    {
+      "id": "application-manager-workers",
+      "description": "Complete assignment, progress, review, and approval with exact-once reducer state.",
+      "layer": "application",
+      "iterations": 20,
+      "warmup": 2,
+      "variant": {
+        "application": "manager-workers@1.0.0"
+      },
+      "input": {
+        "fixture": "manager-assigns-reviews-and-approves"
+      },
+      "thresholds": {
+        "successRate": 1,
+        "correctnessRate": 1,
+        "p95LatencyMs": 100
+      }
+    },
+    {
+      "id": "harness-event-to-outcome",
+      "description": "Wake a runtime, inject one event, and correlate its terminal outcome.",
+      "layer": "harness",
+      "iterations": 20,
+      "warmup": 2,
+      "variant": {
+        "harness": "under-test"
+      },
+      "input": {
+        "intent": "Return the token P0_OK."
+      },
+      "expected": {
+        "contains": "P0_OK"
+      },
+      "thresholds": {
+        "successRate": 0.99,
+        "correctnessRate": 1,
+        "p95LatencyMs": 30000
+      }
+    },
+    {
+      "id": "model-collaboration-quality",
+      "description": "Measure task correctness while keeping application and harness fixed.",
+      "layer": "model",
+      "iterations": 10,
+      "warmup": 0,
+      "variant": {
+        "application": "request-response@1.0.0",
+        "harness": "under-test",
+        "model": "under-test"
+      },
+      "input": {
+        "dataset": "repository-collaboration-v1"
+      },
+      "thresholds": {
+        "successRate": 0.9,
+        "correctnessRate": 0.8,
+        "p95LatencyMs": 120000
+      }
+    },
+    {
+      "id": "system-two-runtime-workflow",
+      "description": "Run an end-to-end two-runtime workflow including delivery, application resume, and final response.",
+      "layer": "system",
+      "iterations": 10,
+      "warmup": 1,
+      "variant": {
+        "transport": "relay",
+        "application": "request-response@1.0.0",
+        "harness": "claude-code+codex"
+      },
+      "input": {
+        "scenario": "two-runtime-request-response"
+      },
+      "thresholds": {
+        "successRate": 0.99,
+        "correctnessRate": 1,
+        "p95LatencyMs": 60000
+      }
+    }
+  ]
+}

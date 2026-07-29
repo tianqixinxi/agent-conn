@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="AgentComm 从开放协议架构到分层 Benchmark 设计的演示文稿">
+  <title>AgentComm：从架构设计到 Benchmark</title>
+  <style>
+    :root {
+      --cream: #f4efe6;
+      --paper: #fffaf3;
+      --ink: #171512;
+      --muted: #605a51;
+      --pink: #f4a6c1;
+      --mint: #b8efd2;
+      --yellow: #f9dc5c;
+      --blue: #b8d9ff;
+      --coral: #ff8a70;
+      --line: 3px solid var(--ink);
+      --shadow: 9px 9px 0 var(--ink);
+      --page-pad: clamp(28px, 5vw, 78px);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      overflow: hidden;
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .deck {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      isolation: isolate;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: auto;
+      padding: var(--page-pad);
+      background:
+        linear-gradient(90deg, transparent 49.8%, rgba(23, 21, 18, .045) 50%, transparent 50.2%),
+        var(--cream);
+    }
+
+    .slide.active {
+      display: flex;
+      flex-direction: column;
+      animation: enter .22s ease-out;
+    }
+
+    @keyframes enter {
+      from { opacity: .25; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .slide::before {
+      content: attr(data-kicker);
+      display: block;
+      align-self: flex-start;
+      margin-bottom: 18px;
+      padding: 8px 11px;
+      border: 2px solid var(--ink);
+      background: var(--yellow);
+      font: 850 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      transform: rotate(-.6deg);
+    }
+
+    .slide-number {
+      position: absolute;
+      top: 26px;
+      right: 30px;
+      font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--muted);
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1, h2, h3 {
+      font-family: "Arial Black", Impact, ui-rounded, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: -.045em;
+    }
+
+    h1 {
+      max-width: 1200px;
+      margin-bottom: 26px;
+      font-size: clamp(3.3rem, 8.2vw, 8rem);
+      line-height: .87;
+      letter-spacing: -.075em;
+    }
+
+    .slide:first-child h1 {
+      font-size: clamp(3.3rem, 5.8vw, 6.4rem);
+    }
+
+    h2 {
+      max-width: 1150px;
+      margin-bottom: 28px;
+      font-size: clamp(2.35rem, 5.6vw, 5.5rem);
+      line-height: .94;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: clamp(1.1rem, 1.7vw, 1.65rem);
+      line-height: 1;
+    }
+
+    p, li {
+      font-size: clamp(.94rem, 1.45vw, 1.35rem);
+      line-height: 1.45;
+    }
+
+    strong { font-weight: 850; }
+    a {
+      color: inherit;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .9em;
+    }
+
+    .lede {
+      max-width: 1040px;
+      color: #3e3932;
+      font-size: clamp(1.18rem, 2.2vw, 2rem);
+      line-height: 1.42;
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .muted { color: var(--muted); }
+
+    .highlight {
+      padding: 0 .12em;
+      background: linear-gradient(transparent 58%, var(--pink) 58%);
+    }
+
+    .stroke {
+      color: var(--cream);
+      -webkit-text-stroke: 2px var(--ink);
+      text-shadow: 6px 6px 0 var(--pink);
+    }
+
+    .hero-grid,
+    .two-col,
+    .three-col,
+    .four-col {
+      display: grid;
+      gap: clamp(18px, 2.4vw, 34px);
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .hero-grid { grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); align-items: center; flex: 1; }
+    .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .four-col { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card {
+      position: relative;
+      min-width: 0;
+      padding: clamp(18px, 2.2vw, 30px);
+      border: var(--line);
+      background: var(--paper);
+      box-shadow: 7px 7px 0 var(--ink);
+    }
+
+    .card.pink { background: var(--pink); }
+    .card.mint { background: var(--mint); }
+    .card.yellow { background: var(--yellow); }
+    .card.blue { background: var(--blue); }
+    .card.coral { background: var(--coral); }
+    .card.dark { background: var(--ink); color: var(--cream); }
+
+    .card p:last-child,
+    .card ul:last-child { margin-bottom: 0; }
+
+    .card ul,
+    .clean-list {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .card li,
+    .clean-list li {
+      padding: 8px 0;
+      border-top: 2px solid currentColor;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 6px 8px;
+      border: 2px solid currentColor;
+      font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .metric {
+      display: block;
+      margin-bottom: 8px;
+      font: 900 clamp(2.2rem, 5vw, 5rem)/.85 "Arial Black", Impact, sans-serif;
+      letter-spacing: -.065em;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: minmax(210px, .72fr) minmax(0, 1.7fr) minmax(210px, .72fr);
+      gap: 16px 26px;
+      align-items: stretch;
+      flex: 1;
+    }
+
+    .arch-layer {
+      grid-column: 2;
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(180px, .55fr) minmax(0, 1.45fr);
+      gap: 22px;
+      align-items: center;
+      padding: 16px 20px;
+      border: var(--line);
+      box-shadow: 5px 5px 0 var(--ink);
+      background: var(--paper);
+    }
+
+    .arch-layer:not(:last-of-type)::after {
+      content: "↓";
+      position: absolute;
+      z-index: 2;
+      left: 50%;
+      bottom: -25px;
+      font: 900 20px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .arch-layer:nth-of-type(1) { background: var(--pink); }
+    .arch-layer:nth-of-type(2) { background: var(--yellow); }
+    .arch-layer:nth-of-type(3) { background: var(--blue); }
+    .arch-layer:nth-of-type(4) { background: var(--mint); }
+    .arch-layer:nth-of-type(5) { background: var(--ink); color: var(--cream); }
+
+    .arch-layer strong {
+      font: 900 clamp(1rem, 1.45vw, 1.4rem)/1 "Arial Black", Impact, sans-serif;
+      text-transform: uppercase;
+    }
+
+    .arch-layer span {
+      font: 750 clamp(.72rem, 1vw, .96rem)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .arch-side {
+      align-self: center;
+      padding: 18px;
+      border: 2px dashed var(--ink);
+      background: rgba(255, 250, 243, .72);
+    }
+
+    .arch-side.left { grid-column: 1; grid-row: 1 / span 2; }
+    .arch-side.right { grid-column: 3; grid-row: 3 / span 3; }
+
+    .package-map {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+      flex: 1;
+    }
+
+    .package {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 20px;
+      border: 2px solid var(--ink);
+      background: var(--paper);
+    }
+
+    .package:nth-child(4n + 1) { box-shadow: 6px 6px 0 var(--pink); }
+    .package:nth-child(4n + 2) { box-shadow: 6px 6px 0 var(--yellow); }
+    .package:nth-child(4n + 3) { box-shadow: 6px 6px 0 var(--mint); }
+    .package:nth-child(4n + 4) { box-shadow: 6px 6px 0 var(--blue); }
+
+    .package code {
+      display: block;
+      overflow-wrap: anywhere;
+      font-weight: 850;
+    }
+
+    .package p {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: clamp(.75rem, 1.05vw, 1rem);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(100px, 1fr));
+      gap: 26px;
+      align-items: center;
+      margin: auto 0;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 150px;
+      padding: 18px 14px;
+      border: 2px solid var(--ink);
+      background: var(--paper);
+      box-shadow: 5px 5px 0 var(--ink);
+    }
+
+    .flow-step:nth-child(2n) { background: var(--mint); }
+    .flow-step:nth-child(3n) { background: var(--yellow); }
+
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -24px;
+      transform: translateY(-50%);
+      font: 900 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .flow-step b {
+      display: block;
+      margin-bottom: 9px;
+      font: 900 16px/1 "Arial Black", Impact, sans-serif;
+      text-transform: uppercase;
+    }
+
+    .flow-step span {
+      font: 700 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .formula {
+      margin: 24px 0;
+      padding: 24px;
+      border: var(--line);
+      background: var(--ink);
+      color: var(--cream);
+      box-shadow: 8px 8px 0 var(--yellow);
+      font: 800 clamp(1rem, 2.2vw, 2rem)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-align: center;
+    }
+
+    .benchmark-stack {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      flex: 1;
+      align-items: stretch;
+    }
+
+    .bench-layer {
+      display: flex;
+      flex-direction: column;
+      padding: 20px 16px;
+      border: var(--line);
+      background: var(--paper);
+      box-shadow: 5px 5px 0 var(--ink);
+    }
+
+    .bench-layer:nth-child(1) { background: var(--pink); }
+    .bench-layer:nth-child(2) { background: var(--yellow); }
+    .bench-layer:nth-child(3) { background: var(--blue); }
+    .bench-layer:nth-child(4) { background: var(--mint); }
+    .bench-layer:nth-child(5) { background: var(--ink); color: var(--cream); }
+
+    .bench-layer .index {
+      margin-bottom: 20px;
+      font: 900 34px/1 "Arial Black", Impact, sans-serif;
+    }
+
+    .bench-layer p {
+      font-size: clamp(.77rem, 1.06vw, 1rem);
+    }
+
+    .bench-layer .answer {
+      margin-top: auto;
+      padding-top: 13px;
+      border-top: 2px solid currentColor;
+      font: 800 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: clamp(9px, 1.3vw, 17px);
+      border: 2px solid var(--ink);
+      text-align: left;
+      vertical-align: top;
+      font-size: clamp(.72rem, 1.05vw, 1rem);
+      line-height: 1.35;
+    }
+
+    .matrix th {
+      background: var(--yellow);
+      font: 850 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-transform: uppercase;
+    }
+
+    .matrix tr:nth-child(even) td { background: rgba(184, 239, 210, .35); }
+
+    .gate {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 12px 0;
+      border-top: 2px solid currentColor;
+    }
+
+    .gate-mark {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      font-weight: 900;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: auto;
+    }
+
+    .phase {
+      position: relative;
+      padding: 24px 20px;
+      border: var(--line);
+      background: var(--paper);
+    }
+
+    .phase:nth-child(1) { box-shadow: 7px 7px 0 var(--pink); }
+    .phase:nth-child(2) { box-shadow: 7px 7px 0 var(--yellow); }
+    .phase:nth-child(3) { box-shadow: 7px 7px 0 var(--mint); }
+    .phase:nth-child(4) { box-shadow: 7px 7px 0 var(--blue); }
+
+    .phase .num {
+      display: block;
+      margin-bottom: 26px;
+      font: 900 32px/1 "Arial Black", Impact, sans-serif;
+    }
+
+    .controls {
+      position: fixed;
+      z-index: 20;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border: 2px solid var(--ink);
+      background: rgba(255, 250, 243, .95);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .controls button {
+      min-width: 38px;
+      min-height: 34px;
+      border: 2px solid var(--ink);
+      background: var(--paper);
+      cursor: pointer;
+      font-weight: 850;
+    }
+
+    .controls button:hover { background: var(--yellow); }
+    .controls button:disabled { opacity: .35; cursor: default; }
+
+    .counter {
+      min-width: 70px;
+      text-align: center;
+      font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .progress {
+      position: fixed;
+      z-index: 21;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 6px;
+      background: rgba(23, 21, 18, .12);
+    }
+
+    .progress > span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--coral);
+      transition: width .18s ease;
+    }
+
+    .notes {
+      position: fixed;
+      z-index: 19;
+      left: 18px;
+      right: 180px;
+      bottom: 18px;
+      display: none;
+      max-height: 34vh;
+      overflow: auto;
+      padding: 18px 20px;
+      border: var(--line);
+      background: rgba(23, 21, 18, .96);
+      color: var(--cream);
+      box-shadow: 6px 6px 0 var(--yellow);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .notes.visible { display: block; }
+    .notes strong { color: var(--yellow); }
+
+    .help {
+      position: fixed;
+      z-index: 30;
+      inset: 50% auto auto 50%;
+      display: none;
+      width: min(620px, calc(100% - 40px));
+      padding: 26px;
+      border: var(--line);
+      background: var(--paper);
+      box-shadow: 10px 10px 0 var(--ink);
+      transform: translate(-50%, -50%);
+    }
+
+    .help.visible { display: block; }
+    .help kbd {
+      display: inline-block;
+      min-width: 28px;
+      margin-right: 7px;
+      padding: 4px 7px;
+      border: 2px solid var(--ink);
+      background: var(--yellow);
+      text-align: center;
+      font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .source {
+      margin-top: auto;
+      padding-top: 18px;
+      color: var(--muted);
+      font: 700 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    @media (max-width: 980px), (max-height: 690px) {
+      :root { --page-pad: 28px; }
+      .slide { padding-bottom: 76px; }
+      .hero-grid, .two-col { grid-template-columns: 1fr; }
+      .three-col, .four-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .package-map { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .architecture { grid-template-columns: 1fr; }
+      .arch-layer, .arch-side.left, .arch-side.right { grid-column: 1; grid-row: auto; }
+      .arch-side { display: none; }
+      .flow { grid-template-columns: repeat(4, minmax(100px, 1fr)); }
+      .flow-step:nth-child(4)::after { display: none; }
+      .benchmark-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (min-width: 981px) and (max-height: 900px) {
+      :root { --page-pad: 26px 70px 54px; }
+      .slide::before {
+        margin-bottom: 10px;
+        padding: 6px 9px;
+      }
+      .slide-number { top: 20px; }
+      h1 { margin-bottom: 18px; }
+      h2 {
+        max-width: 1080px;
+        margin-bottom: 18px;
+        font-size: clamp(2.25rem, 4.35vw, 4rem);
+      }
+      h3 { font-size: clamp(1rem, 1.35vw, 1.35rem); }
+      p, li {
+        font-size: clamp(.82rem, 1.08vw, 1.05rem);
+        line-height: 1.38;
+      }
+      .lede { font-size: clamp(1rem, 1.65vw, 1.5rem); }
+      .architecture { gap: 9px 26px; }
+      .arch-layer {
+        grid-template-columns: minmax(180px, .55fr) minmax(0, 1.45fr);
+        gap: 18px;
+        padding: 10px 16px;
+      }
+      .arch-layer:not(:last-of-type)::after {
+        bottom: -18px;
+        font-size: 16px;
+      }
+      .arch-side { padding: 14px; }
+      .package-map { gap: 12px 16px; }
+      .package { padding: 14px 16px; }
+      .package p { margin-top: 8px; }
+      .flow-step { min-height: 126px; padding: 15px 12px; }
+      .formula { margin: 18px 0; padding: 17px; }
+      .card { padding: 20px; }
+      .card li, .clean-list li { padding: 6px 0; }
+      .benchmark-stack { gap: 10px; }
+      .bench-layer { padding: 16px 13px; }
+      .bench-layer .index { margin-bottom: 12px; font-size: 28px; }
+      .timeline { gap: 16px; }
+      .phase { padding: 18px 16px; }
+      .phase .num { margin-bottom: 16px; }
+    }
+
+    @media (max-width: 640px) {
+      body { overflow: auto; }
+      .deck { height: auto; }
+      .slide, .slide.active {
+        position: relative;
+        min-height: 100svh;
+      }
+      .slide:not(.active) { display: none; }
+      h1 { font-size: clamp(3rem, 16vw, 5.4rem); }
+      h2 { font-size: clamp(2.2rem, 11vw, 4rem); }
+      .three-col, .four-col, .package-map, .benchmark-stack, .timeline { grid-template-columns: 1fr; }
+      .arch-layer { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step { min-height: auto; }
+      .flow-step:not(:last-child)::after {
+        top: auto;
+        right: auto;
+        left: 50%;
+        bottom: -25px;
+        transform: translateX(-50%) rotate(90deg);
+      }
+      .flow-step:nth-child(4)::after { display: block; }
+      .matrix-wrap { overflow-x: auto; padding-bottom: 10px; }
+      .matrix { min-width: 740px; }
+      .controls { right: 10px; bottom: 10px; }
+      .notes { left: 10px; right: 10px; bottom: 64px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        transition-duration: .01ms !important;
+      }
+    }
+
+    @media print {
+      @page { size: 16in 9in; margin: 0; }
+      html, body { width: auto; height: auto; overflow: visible; background: white; }
+      .deck { height: auto; }
+      .slide, .slide.active {
+        position: relative;
+        display: flex !important;
+        width: 16in;
+        height: 9in;
+        overflow: hidden;
+        page-break-after: always;
+        break-after: page;
+      }
+      .controls, .progress, .notes, .help { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" id="deck" aria-live="polite">
+    <section class="slide active" data-kicker="AgentComm / Architecture → Benchmark" data-notes="<strong>开场：</strong>今天不只讲一个多 Agent 产品，而是讲一套开放基础。前半部分回答系统怎样分层，后半部分回答我们怎么证明每一层设计是对的。">
+      <span class="slide-number">01</span>
+      <div class="hero-grid">
+        <div>
+          <h1>AgentComm<br><span class="stroke">从架构到 Benchmark</span></h1>
+          <p class="lede">让不同 Agent Runtime 在同一套开放基础上协作，同时保持应用协议、通讯基础和宿主权限彼此解耦。</p>
+          <p class="mono muted">OPEN APPLICATION PROTOCOLS · RELIABLE DELIVERY · HUMAN CONTROL</p>
+        </div>
+        <div class="card mint">
+          <span class="tag">One sentence</span>
+          <p style="margin:24px 0 0;font-size:clamp(1.45rem,3vw,2.8rem);font-weight:900;line-height:1.12;">像 HTTP 承载网站一样，AgentComm 承载不同的 Agent 协作方式。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="01 / Why" data-notes="<strong>问题：</strong>今天的多 Agent 系统通常把 workflow、通讯和本机工具权限绑死。换一种协作方式、模型或 transport，就要重写整个系统。AgentComm 的设计目标是让这三部分可以独立演进。">
+      <span class="slide-number">02</span>
+      <h2>我们要拆开的<br><span class="highlight">不是代码，是责任</span></h2>
+      <div class="three-col" style="margin:auto 0;">
+        <article class="card pink">
+          <span class="metric">HOW</span>
+          <h3>怎样协作</h3>
+          <p>Workflow、Swarm、Debate、Auth Grant、Repo Collaboration。</p>
+          <p class="mono"><strong>Owner:</strong> Community Application</p>
+        </article>
+        <article class="card yellow">
+          <span class="metric">MOVE</span>
+          <h3>怎样送达</h3>
+          <p>身份、频道、邀请、发现、路由、加密、重试和 ACK。</p>
+          <p class="mono"><strong>Owner:</strong> Core + Delivery</p>
+        </article>
+        <article class="card blue">
+          <span class="metric">ACT</span>
+          <h3>怎样行动</h3>
+          <p>模型、上下文、本机文件、工具、凭据和用户权限。</p>
+          <p class="mono"><strong>Owner:</strong> Agent Harness</p>
+        </article>
+      </div>
+      <p class="source">设计目标：替换任意一层，不改变其他层的语义契约。</p>
+    </section>
+
+    <section class="slide" data-kicker="02 / Architecture" data-notes="<strong>从上往下讲：</strong>社区应用定义协作；Spec 和 SDK 让协议可版本化、可执行；A2A 保持跨 Runtime 语义，Runtime Ingress 把入站事件映射到具体 Harness；Core 和 Delivery 负责通讯；最底层可以是 Local SQLite 或 HTTP Relay。Claude Code Channels 只是一个 adapter，不是 AgentComm 的频道模型。">
+      <span class="slide-number">03</span>
+      <h2>五层架构：<br>上层定义意义，下层负责送达</h2>
+      <div class="architecture">
+        <aside class="arch-side left">
+          <strong>社区拥有</strong>
+          <p>角色、事件、状态机、不变量和客户端行为。</p>
+        </aside>
+        <div class="arch-layer">
+          <strong>① Community Application</strong>
+          <span>workflow · swarm · debate · auth-grant · repo collaboration</span>
+        </div>
+        <div class="arch-layer">
+          <strong>② Application Spec + SDK</strong>
+          <span>manifest · semver · reducer · effect journal · conformance</span>
+        </div>
+        <div class="arch-layer">
+          <strong>③ A2A + Runtime Ingress + Harness</strong>
+          <span>message · task · native push · poll · webhook · process · host decisions</span>
+        </div>
+        <div class="arch-layer">
+          <strong>④ Communication Core + Delivery</strong>
+          <span>identity · channel · invite · routing · E2E · store-and-forward</span>
+        </div>
+        <div class="arch-layer">
+          <strong>⑤ Local / HTTP Relay</strong>
+          <span>SQLite · signed HTTP · ordering · public feed · operations</span>
+        </div>
+        <aside class="arch-side right">
+          <strong>基础设施拥有</strong>
+          <p>可靠送达、容量、延迟、成本和可运维性，不拥有 workflow。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="03 / Components" data-notes="<strong>组件边界：</strong>每个 package 只承担一个职责。特别注意 protocol 只是 0.x 兼容 facade，新职责不再堆进去；manager-workers 是独立参考应用，不进入 Core 依赖。">
+      <span class="slide-number">04</span>
+      <h2>组件不是目录列表，<br>而是<span class="highlight">依赖边界</span></h2>
+      <div class="package-map">
+        <article class="package"><code>@agent-comm/core</code><p>身份、频道、邀请、Envelope、E2E、审计。</p></article>
+        <article class="package"><code>@agent-comm/delivery</code><p>TransportBinding、发现和可靠投递契约。</p></article>
+        <article class="package"><code>@agent-comm/a2a-binding</code><p>A2A Message、Task、Artifact、AgentCard。</p></article>
+        <article class="package"><code>@agent-comm/application-spec</code><p>Manifest、Extension URI、SemVer 和协商。</p></article>
+        <article class="package"><code>@agent-comm/client-sdk</code><p>Consumer、Reducer、Effect Journal、恢复。</p></article>
+        <article class="package"><code>@agent-comm/application-catalog</code><p>Registry、安装信任、频道绑定和更新。</p></article>
+        <article class="package"><code>@agent-comm/runtime-ingress</code><p>通用 Event、Capabilities、生命周期与 Dispatcher。</p></article>
+        <article class="package"><code>@agent-comm/runtime-supervisor</code><p>持久 Runtime Registry、Heartbeat、受控恢复。</p></article>
+        <article class="package"><code>ingress adapters</code><p>Claude Native/Print、Codex App Server/Exec、Polling、Webhook、Process。</p></article>
+        <article class="package"><code>@agent-comm/gateway-a2a</code><p>可选可信明文 A2A HTTP ingress。</p></article>
+        <article class="package"><code>agent-comm runtime</code><p>SQLite、CLI、Daemon、launchd/systemd。</p></article>
+        <article class="package"><code>@agent-comm/relay</code><p>签名 HTTP、路由、CLI bundle、协议索引。</p></article>
+        <article class="package"><code>reference applications</code><p>manager-workers 与 request-response。</p></article>
+        <article class="package"><code>@agent-comm/benchmark</code><p>五层 Suite、阈值、报告和基线比较。</p></article>
+        <article class="package"><code>Claude plugin</code><p>Marketplace 产物与冷启动入口。</p></article>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="04 / Event lifecycle" data-notes="<strong>可靠性核心：</strong>网络可以重复投递，但应用状态不能重复变化。收到消息后先去重、reduce，把 state、event 和 effects 放进一个事务，提交成功才 ACK。外部工具副作用单独执行，崩溃时进入 reconciliation。">
+      <span class="slide-number">05</span>
+      <h2>一条 Application Event<br>怎样安全穿过系统</h2>
+      <div class="flow">
+        <div class="flow-step"><b>Publish</b><span>URI · version · event type · body</span></div>
+        <div class="flow-step"><b>Negotiate</b><span>检查 AgentCard 与版本兼容</span></div>
+        <div class="flow-step"><b>Deliver</b><span>签名、加密、at-least-once</span></div>
+        <div class="flow-step"><b>Dedupe</b><span>按 messageId 去重</span></div>
+        <div class="flow-step"><b>Reduce</b><span>pure reducer(state, event)</span></div>
+        <div class="flow-step"><b>Commit</b><span>state + event + effect journal</span></div>
+        <div class="flow-step"><b>Run</b><span>Harness 执行并回传 eventId outcome</span></div>
+        <div class="flow-step"><b>Resume</b><span>协议把结果变成原生 response/task event</span></div>
+      </div>
+      <div class="formula">NETWORK = AT-LEAST-ONCE &nbsp; · &nbsp; APPLICATION STATE = EXACTLY-ONCE</div>
+    </section>
+
+    <section class="slide" data-kicker="05 / Trust" data-notes="<strong>三个审批不能互相替代：</strong>通讯层决定消息是否放行；应用层决定任务有没有业务授权；Harness 决定能不能操作本机。远端文字说“已经批准”只是一段数据。私有频道 E2E，公开频道故意可读。">
+      <span class="slide-number">06</span>
+      <h2>信任不是一个开关，<br>而是<span class="highlight">三条边界</span></h2>
+      <div class="three-col" style="margin:auto 0 26px;">
+        <article class="card pink">
+          <span class="tag">Transport</span>
+          <h3 style="margin-top:22px;">Delivery Hold</h3>
+          <p>这条消息是否允许被投递、修改或丢弃。</p>
+        </article>
+        <article class="card yellow">
+          <span class="tag">Application</span>
+          <h3 style="margin-top:22px;">Task Authorization</h3>
+          <p>同一 Task/Context 是否获得结构化业务授权。</p>
+        </article>
+        <article class="card blue">
+          <span class="tag">Host</span>
+          <h3 style="margin-top:22px;">Host Permission</h3>
+          <p>是否允许模型访问本机文件、工具和凭据。</p>
+        </article>
+      </div>
+      <div class="two-col">
+        <div class="card dark"><strong>PRIVATE</strong><p>AES-256-GCM E2E；Relay 只看路由信封，不读业务 Payload。</p></div>
+        <div class="card mint"><strong>PUBLIC</strong><p>有意明文保存；浏览器展示成员、在线状态和消息时间线。</p></div>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="06 / Reference application" data-notes="<strong>实践方法：</strong>我们用 manager-workers 验证扩展机制，而不是把它写死在 Core。它覆盖注册、分配、进度、输入、授权、完成和 review。但真实 worker 进程、worktree 和 PR 自动化仍属于下一产品里程碑。">
+      <span class="slide-number">07</span>
+      <div class="hero-grid">
+        <div>
+          <h2>Manager–Workers<br>是参考应用，<span class="highlight">不是 Core</span></h2>
+          <p class="lede">它证明社区协议可以只依赖 Application Spec 与 Client SDK，在不修改 Relay、A2A 或 Claude Harness 的前提下定义完整协作状态机。</p>
+          <ul class="clean-list">
+            <li>注册与能力声明</li>
+            <li>任务分配、进度和完成</li>
+            <li>INPUT_REQUIRED / AUTH_REQUIRED</li>
+            <li>Review、驳回、返工和终态</li>
+          </ul>
+        </div>
+        <div class="card yellow">
+          <span class="metric">265</span>
+          <h3>Automated tests</h3>
+          <p>Foundation 架构、可靠性、协商、授权和参考应用已经有自动化覆盖。</p>
+          <div class="gate"><span class="gate-mark">✓</span><span>Foundation implemented</span></div>
+          <div class="gate"><span class="gate-mark">✓</span><span>Claude → Codex protocol E2E / runtime daemon / app catalog</span></div>
+          <div class="gate"><span class="gate-mark">→</span><span>Worker lifecycle / worktree / PR automation: next milestone</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="07 / Benchmark principle" data-notes="<strong>转入 Benchmark：</strong>最终成功率不能告诉我们是哪一层好或坏。模型能力可能掩盖协议缺陷，Relay 故障也可能看起来像模型失败。所以测某层时，必须冻结或模拟其他层。">
+      <span class="slide-number">08</span>
+      <h2>一个 E2E 分数，<br>无法评价一套分层架构</h2>
+      <div class="formula">OUTCOME = PROTOCOL × HARNESS × MODEL × TRANSPORT × TASK × FAULT × SEED</div>
+      <div class="three-col" style="margin:auto 0;">
+        <article class="card pink">
+          <span class="metric">01</span>
+          <h3>隔离变量</h3>
+          <p>评价某层时，其他层使用固定实现或 Deterministic Mock。</p>
+        </article>
+        <article class="card mint">
+          <span class="metric">02</span>
+          <h3>硬门槛优先</h3>
+          <p>安全、状态正确性和消息不丢失不能被平均分抵消。</p>
+        </article>
+        <article class="card blue">
+          <span class="metric">03</span>
+          <h3>组合验证</h3>
+          <p>各层单测通过后，再用因子实验评价交互效应。</p>
+        </article>
+      </div>
+      <p class="source">可执行入口：<code>agentcomm benchmark run benchmarks/p0-suite.json --command &lt;executor&gt;</code></p>
+    </section>
+
+    <section class="slide" data-kicker="08 / Benchmark stack" data-notes="<strong>五层 Benchmark：</strong>L1 看协作有没有收益；L2 看协议运行时是否正确；L3 看 A2A 与 Harness 是否准确高效；L4 看故障下是否仍可靠；L5 看容量、延迟、成本和运维。每层的评价问题都不同。">
+      <span class="slide-number">09</span>
+      <h2>每一层，回答一个不同的问题</h2>
+      <div class="benchmark-stack">
+        <article class="bench-layer"><span class="index">L1</span><h3>Application</h3><p>真实任务、协作拓扑、人工参与。</p><span class="answer">结构化协议是否比裸聊天更好？</span></article>
+        <article class="bench-layer"><span class="index">L2</span><h3>Spec + SDK</h3><p>事件 replay、崩溃点、版本协商。</p><span class="answer">状态机与扩展机制是否正确？</span></article>
+        <article class="bench-layer"><span class="index">L3</span><h3>A2A + Runtime Ingress</h3><p>互操作、push/poll、唤醒、权限通知。</p><span class="answer">不同 Harness 接入是否准确、高效？</span></article>
+        <article class="bench-layer"><span class="index">L4</span><h3>Core + Delivery</h3><p>乱序、重试、分区、重启、签名。</p><span class="answer">通讯语义在故障下是否成立？</span></article>
+        <article class="bench-layer"><span class="index">L5</span><h3>Infrastructure</h3><p>负载、容量、成本、备份恢复。</p><span class="answer">生产系统能跑多大、多久、多贵？</span></article>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="09 / L1 Benchmark" data-notes="<strong>L1 的关键是比较：</strong>同模型、同 Harness、同 Transport，比较 Single Agent、Raw Channel、Delegate 和 Manager-Workers。真实 Repo 任务用测试评分，Workflow 用里程碑，Debate 用隐藏事实，Auth Grant 用最小权限和误授权。">
+      <span class="slide-number">10</span>
+      <h2>L1 · Application<br>评价<span class="highlight">协作收益</span></h2>
+      <div class="two-col">
+        <article class="card pink">
+          <h3>场景</h3>
+          <ul>
+            <li>Workflow：DAG、分支、返工</li>
+            <li>Swarm：动态领取、掉线重分配</li>
+            <li>Debate：分散证据、错误观点</li>
+            <li>Auth Grant：批准、拒绝、撤销</li>
+            <li>Repo：issue → patch → test → review</li>
+          </ul>
+        </article>
+        <article class="card mint">
+          <h3>指标</h3>
+          <ul>
+            <li>Task / Milestone success</li>
+            <li>pass<sup>k</sup> 与 deadlock rate</li>
+            <li>Message / token amplification</li>
+            <li>Critical-path stretch</li>
+            <li>Human intervention count</li>
+          </ul>
+        </article>
+      </div>
+      <div class="formula">PROTOCOL LEVERAGE = STRUCTURED PROTOCOL SUCCESS − RAW CHANNEL SUCCESS</div>
+    </section>
+
+    <section class="slide" data-kicker="10 / L2 Benchmark" data-notes="<strong>L2 不该用 LLM：</strong>它是一组确定性 conformance 和 property-based test。我们在事务前后、ACK 前后、effect 执行前后逐点崩溃，然后 replay 同一历史，检查状态摘要和副作用是否一致。">
+      <span class="slide-number">11</span>
+      <h2>L2 · Spec + SDK<br>评价<span class="highlight">正确性与恢复</span></h2>
+      <div class="three-col">
+        <article class="card yellow">
+          <h3>事件历史</h3>
+          <ul>
+            <li>重复与乱序</li>
+            <li>终态后晚到</li>
+            <li>未知事件</li>
+            <li>Reducer failure</li>
+          </ul>
+        </article>
+        <article class="card blue">
+          <h3>Crash Matrix</h3>
+          <ul>
+            <li>Commit 前 / 后</li>
+            <li>ACK 前 / 后</li>
+            <li>Effect 执行中</li>
+            <li>Applied 标记前</li>
+          </ul>
+        </article>
+        <article class="card mint">
+          <h3>Compatibility</h3>
+          <ul>
+            <li>SemVer 边界</li>
+            <li>AgentCard 与 Consumer</li>
+            <li>Unknown extension</li>
+            <li>Legacy raw-v1</li>
+          </ul>
+        </article>
+      </div>
+      <div class="card dark" style="margin-top:28px;">
+        <div class="four-col">
+          <div><strong>STATE DIVERGENCE</strong><span class="metric">0</span></div>
+          <div><strong>DUPLICATE REDUCE</strong><span class="metric">0</span></div>
+          <div><strong>ILLEGAL AUTH</strong><span class="metric">0</span></div>
+          <div><strong>REPLAY</strong><span class="metric">100%</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="11 / L3 Benchmark" data-notes="<strong>L3 分两条轨道：</strong>A2A 用官方规范和跨语言 sample 做互操作；Runtime Ingress 对 Claude Native、Polling、Webhook 和 Process 使用同一事件 corpus，测 accept/defer、lease、重投递、唤醒延迟和权限完整性。随后固定同一个真实模型测 Harness 效果，避免把模型失误误判成 wiring 错误。">
+      <span class="slide-number">12</span>
+      <h2>L3 · A2A + Runtime Ingress<br>评价<span class="highlight">互操作与接入质量</span></h2>
+      <div class="two-col">
+        <article class="card blue">
+          <span class="tag">A2A Binding</span>
+          <h3 style="margin-top:20px;">跨实现互操作</h3>
+          <ul>
+            <li>AgentCard discovery</li>
+            <li>Message / Task / Artifact round-trip</li>
+            <li>contextId / taskId 保持</li>
+            <li>Extension metadata 保持</li>
+            <li>官方 Python / JS / Go sample 交叉测试</li>
+          </ul>
+        </article>
+        <article class="card pink">
+          <span class="tag">Ingress + Harness</span>
+          <h3 style="margin-top:20px;">跨 Adapter 行为</h3>
+          <ul>
+            <li>Event-to-first-action latency</li>
+            <li>Accept / defer / redelivery 正确性</li>
+            <li>Push、lease poll、webhook、spawn parity</li>
+            <li>Approval precision / recall</li>
+            <li>Context token overhead</li>
+          </ul>
+        </article>
+      </div>
+      <p class="source">两条轨道：Deterministic Mock Model 验证 wiring；Fixed Model 验证真实 Runtime 效果。</p>
+    </section>
+
+    <section class="slide" data-kicker="12 / L4 Benchmark" data-notes="<strong>L4 应采用 Jepsen 风格：</strong>记录 send、append、deliver、ACK、retry 的完整历史，同时注入丢包、乱序、连接重置、网络分区、进程 kill、磁盘异常和时钟偏移，再由模型检查器验证安全性和活性。">
+      <span class="slide-number">13</span>
+      <h2>L4 · Core + Delivery<br>评价<span class="highlight">故障下的通讯承诺</span></h2>
+      <div class="two-col">
+        <article class="card mint">
+          <h3>Fault Injection</h3>
+          <div class="three-col" style="gap:10px;margin-top:18px;">
+            <span class="tag">drop</span><span class="tag">delay</span><span class="tag">duplicate</span>
+            <span class="tag">reorder</span><span class="tag">partition</span><span class="tag">reset</span>
+            <span class="tag">kill</span><span class="tag">disk full</span><span class="tag">clock skew</span>
+          </div>
+          <p style="margin-top:24px;">输入是固定 byte payload，不运行 LLM 或应用 reducer。</p>
+        </article>
+        <article class="card dark">
+          <h3>Hard Gates</h3>
+          <div class="gate"><span class="gate-mark">0</span><span>跨频道或未授权投递</span></div>
+          <div class="gate"><span class="gate-mark">0</span><span>Committed message 丢失</span></div>
+          <div class="gate"><span class="gate-mark">0</span><span>一次性邀请超用</span></div>
+          <div class="gate"><span class="gate-mark">0</span><span>错误签名接受 / 私有明文泄漏</span></div>
+        </article>
+      </div>
+      <div class="formula">HISTORY + NEMESIS + MODEL CHECKER → SAFETY & LIVENESS</div>
+    </section>
+
+    <section class="slide" data-kicker="13 / L5 Benchmark" data-notes="<strong>L5 不只跑一个吞吐数字：</strong>要模拟交互、小型爆发、离线追赶、公开频道读多写少、邀请风暴和长时间运行。逐步提升负载直到 SLO 被击穿，得到容量曲线和成本曲线。">
+      <span class="slide-number">14</span>
+      <h2>L5 · Relay + Infrastructure<br>评价<span class="highlight">容量、成本与运维</span></h2>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th>Workload</th><th>形态</th><th>主要观察</th><th>故障</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Interactive</strong></td><td>小消息、低并发、延迟敏感</td><td>send / delivery p95-p99</td><td>连接重置</td></tr>
+            <tr><td><strong>Burst Delegation</strong></td><td>Manager 短时派发大量任务</td><td>写入吞吐、retry amplification</td><td>SQLite busy</td></tr>
+            <tr><td><strong>Offline Catch-up</strong></td><td>Agent 恢复后集中拉 backlog</td><td>backlog drain rate</td><td>进程重启</td></tr>
+            <tr><td><strong>Public Read-heavy</strong></td><td>少量写，大量浏览器读取</td><td>feed query、并发 reader</td><td>Cloudflare/origin</td></tr>
+            <tr><td><strong>Long-running</strong></td><td>数天频道、历史持续增长</td><td>DB 增长、retention、backup</td><td>磁盘慢/满</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="source">输出不是“支持 10 万 Agent”的口号，而是 SLO 被击穿前的容量曲线、成本曲线与 RPO/RTO。</p>
+    </section>
+
+    <section class="slide" data-kicker="14 / Cross-cutting" data-notes="<strong>两个横切面：</strong>安全要同时看攻击成功率和正常任务成功率，不能靠拒绝所有事情拿高分；UX 要从第一次打开邀请一直量到双方互发第一条消息。最终 E2E 用因子实验估计 Protocol 的主效应和交互效应。">
+      <span class="slide-number">15</span>
+      <h2>横切 Benchmark：<br>安全、UX 与组合效应</h2>
+      <div class="three-col">
+        <article class="card coral">
+          <h3>Security</h3>
+          <ul>
+            <li>伪造 / 重放授权</li>
+            <li>Prompt injection</li>
+            <li>跨频道与秘密泄漏</li>
+            <li>恶意 Extension / AgentCard</li>
+          </ul>
+          <p class="mono"><strong>ASR + Benign Success</strong></p>
+        </article>
+        <article class="card yellow">
+          <h3>Cold-start UX</h3>
+          <ul>
+            <li>新用户与旧版本</li>
+            <li>多 Profile 与语言</li>
+            <li>安装、信任和 Activate</li>
+            <li>失败后的自恢复</li>
+          </ul>
+          <p class="mono"><strong>Time to first message</strong></p>
+        </article>
+        <article class="card blue">
+          <h3>Factorial E2E</h3>
+          <ul>
+            <li>Protocol × Harness × Model</li>
+            <li>Transport × Fault × Seed</li>
+            <li>Task 作为随机效应</li>
+            <li>比较主效应与交互效应</li>
+          </ul>
+          <p class="mono"><strong>Outcome ~ P*H*M + T + F + (1|Task)</strong></p>
+        </article>
+      </div>
+      <div class="formula">安全与正确性是 HARD GATE；成功率、成本和效率才进入 SCORECARD</div>
+    </section>
+
+    <section class="slide" data-kicker="15 / Roadmap" data-notes="<strong>收束：</strong>第一阶段先把 Scenario/Result schema、L2 conformance 和 L4 history recorder 做出来；随后加入模拟协作和安全；最后才花钱跑真实模型矩阵。这样 Benchmark 自己也遵守分层架构。">
+      <span class="slide-number">16</span>
+      <h2>从今天的测试，<br>走向可比较的 Benchmark</h2>
+      <div class="timeline">
+        <article class="phase"><span class="num">01</span><h3>Common Schema</h3><p>Scenario、Result、Trace、Fault 和 Oracle。</p><p class="mono muted">PR smoke</p></article>
+        <article class="phase"><span class="num">02</span><h3>Deterministic</h3><p>L2 conformance、L4 history、Mock Harness。</p><p class="mono muted">CI + nightly</p></article>
+        <article class="phase"><span class="num">03</span><h3>Application</h3><p>Raw Channel、Delegate、Manager–Workers baselines。</p><p class="mono muted">protocol leaderboard</p></article>
+        <article class="phase"><span class="num">04</span><h3>Real E2E</h3><p>Repo、授权、安全、负载与多模型因子实验。</p><p class="mono muted">release report</p></article>
+      </div>
+      <div class="card dark" style="margin-top:34px;">
+        <p style="margin:0;font-size:clamp(1.25rem,2.4vw,2.2rem);font-weight:900;">最终要证明的不是“Agent 能互相说话”，而是：<span style="color:var(--yellow);">结构化协作可以被正确实现、可靠送达、跨 Runtime 复用，并且量化地优于裸聊天。</span></p>
+      </div>
+    </section>
+
+    <section class="slide" data-kicker="Appendix / References" data-notes="<strong>附录：</strong>这些是架构和 Benchmark 选择的主要公开参照。现场不需要逐条讲，可在 Q&amp;A 或会后讨论中使用。仓库内 ARCHITECTURE.md 是 AgentComm 当前实现的 source of truth。">
+      <span class="slide-number">17</span>
+      <h2>公开参照与<br>内部 Source of Truth</h2>
+      <div class="two-col">
+        <article class="card blue">
+          <h3>Protocols & Systems</h3>
+          <ul>
+            <li><a href="https://github.com/a2aproject/A2A/blob/main/docs/specification.md">A2A 1.0 Specification</a></li>
+            <li><a href="https://jepsen.io/">Jepsen · Distributed systems safety</a></li>
+            <li><a href="../ARCHITECTURE.md">AgentComm ARCHITECTURE.md</a></li>
+            <li><a href="../DESIGN.md">AgentComm DESIGN.md</a></li>
+          </ul>
+        </article>
+        <article class="card yellow">
+          <h3>Agent Benchmarks</h3>
+          <ul>
+            <li><a href="https://arxiv.org/abs/2503.01935">MultiAgentBench</a></li>
+            <li><a href="https://arxiv.org/abs/2406.12045">τ-bench</a></li>
+            <li><a href="https://openai.com/index/introducing-swe-bench-verified/">SWE-bench Verified</a></li>
+            <li><a href="https://arxiv.org/abs/2406.13352">AgentDojo</a></li>
+          </ul>
+        </article>
+      </div>
+      <div class="formula">ARCHITECTURE CLAIMS → LAYER ORACLE → CONTROLLED SCENARIO → REPRODUCIBLE REPORT</div>
+    </section>
+  </main>
+
+  <aside class="notes" id="notes" aria-label="演讲者备注"></aside>
+
+  <aside class="help" id="help" aria-label="快捷键帮助">
+    <h3>演示快捷键</h3>
+    <p><kbd>→</kbd><kbd>Space</kbd> 下一页</p>
+    <p><kbd>←</kbd> 上一页</p>
+    <p><kbd>Home</kbd><kbd>End</kbd> 首尾页</p>
+    <p><kbd>N</kbd> 演讲者备注</p>
+    <p><kbd>F</kbd> 全屏</p>
+    <p><kbd>?</kbd> 显示 / 关闭帮助</p>
+  </aside>
+
+  <nav class="controls" aria-label="演示控制">
+    <button type="button" id="prev" aria-label="上一页">←</button>
+    <span class="counter" id="counter">1 / 17</span>
+    <button type="button" id="next" aria-label="下一页">→</button>
+    <button type="button" id="notesButton" aria-label="显示演讲者备注">N</button>
+    <button type="button" id="fullscreenButton" aria-label="进入全屏">F</button>
+    <button type="button" id="helpButton" aria-label="快捷键帮助">?</button>
+  </nav>
+
+  <div class="progress" aria-hidden="true"><span id="progress"></span></div>
+
+  <script>
+    (() => {
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const counter = document.getElementById("counter");
+      const progress = document.getElementById("progress");
+      const prev = document.getElementById("prev");
+      const next = document.getElementById("next");
+      const notes = document.getElementById("notes");
+      const notesButton = document.getElementById("notesButton");
+      const fullscreenButton = document.getElementById("fullscreenButton");
+      const help = document.getElementById("help");
+      const helpButton = document.getElementById("helpButton");
+      let index = 0;
+      let touchStartX = null;
+
+      function requestedIndex() {
+        const match = location.hash.match(/^#slide-(\d+)$/);
+        if (!match) return 0;
+        return Math.min(slides.length - 1, Math.max(0, Number(match[1]) - 1));
+      }
+
+      function show(nextIndex, updateHash = true) {
+        index = Math.min(slides.length - 1, Math.max(0, nextIndex));
+        slides.forEach((slide, slideIndex) => {
+          const active = slideIndex === index;
+          slide.classList.toggle("active", active);
+          slide.setAttribute("aria-hidden", active ? "false" : "true");
+        });
+        counter.textContent = `${index + 1} / ${slides.length}`;
+        progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+        prev.disabled = index === 0;
+        next.disabled = index === slides.length - 1;
+        notes.innerHTML = slides[index].dataset.notes || "";
+        if (updateHash) history.replaceState(null, "", `#slide-${index + 1}`);
+        slides[index].scrollTop = 0;
+        document.title = `${index + 1}/${slides.length} · AgentComm：从架构到 Benchmark`;
+      }
+
+      function toggleNotes() {
+        const visible = notes.classList.toggle("visible");
+        notesButton.setAttribute("aria-pressed", String(visible));
+      }
+
+      function toggleHelp() {
+        const visible = help.classList.toggle("visible");
+        helpButton.setAttribute("aria-pressed", String(visible));
+      }
+
+      async function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen?.();
+        } else {
+          await document.exitFullscreen?.();
+        }
+      }
+
+      prev.addEventListener("click", () => show(index - 1));
+      next.addEventListener("click", () => show(index + 1));
+      notesButton.addEventListener("click", toggleNotes);
+      fullscreenButton.addEventListener("click", toggleFullscreen);
+      helpButton.addEventListener("click", toggleHelp);
+
+      window.addEventListener("hashchange", () => show(requestedIndex(), false));
+      window.addEventListener("keydown", event => {
+        if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+          event.preventDefault();
+          show(index + 1);
+        } else if (["ArrowLeft", "PageUp"].includes(event.key)) {
+          event.preventDefault();
+          show(index - 1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          show(0);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          show(slides.length - 1);
+        } else if (event.key.toLowerCase() === "n") {
+          toggleNotes();
+        } else if (event.key.toLowerCase() === "f") {
+          toggleFullscreen();
+        } else if (event.key === "?") {
+          toggleHelp();
+        } else if (event.key === "Escape" && help.classList.contains("visible")) {
+          toggleHelp();
+        }
+      });
+
+      window.addEventListener("touchstart", event => {
+        touchStartX = event.changedTouches[0]?.clientX ?? null;
+      }, { passive: true });
+
+      window.addEventListener("touchend", event => {
+        if (touchStartX === null) return;
+        const endX = event.changedTouches[0]?.clientX ?? touchStartX;
+        const delta = endX - touchStartX;
+        touchStartX = null;
+        if (Math.abs(delta) < 60) return;
+        show(index + (delta < 0 ? 1 : -1));
+      }, { passive: true });
+
+      show(requestedIndex(), false);
+    })();
+  </script>
+</body>
+</html>

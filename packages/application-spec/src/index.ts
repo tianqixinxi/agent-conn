@@ -49,6 +49,32 @@ export const ApplicationEventDefinitionSchema = z.object({
     .optional(),
 })
 
+export const ApplicationRuntimeDefinitionSchema = z.object({
+  kind: z.enum(['module']),
+  entry: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => !value.startsWith('/') && !value.split('/').includes('..'), {
+      message: 'runtime entry must be a package-relative path',
+    }),
+  export: z.string().trim().min(1).max(120).default('createConsumer'),
+  permissions: z.array(z.string().trim().min(1).max(160)).default([]),
+})
+
+export type ApplicationRuntimeDefinition = z.infer<typeof ApplicationRuntimeDefinitionSchema>
+
+export const ApplicationRendererDefinitionSchema = z.object({
+  entry: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => !value.startsWith('/') && !value.split('/').includes('..'), {
+      message: 'renderer entry must be a package-relative path',
+    }),
+  mediaType: z.string().trim().min(1).max(160).default('text/html'),
+})
+
 export const ApplicationExtensionManifestSchema = z
   .object({
     schemaVersion: z.literal('1'),
@@ -67,6 +93,8 @@ export const ApplicationExtensionManifestSchema = z
         backwardCompatibleFrom: SemanticVersionSchema.optional(),
       })
       .required(),
+    runtime: ApplicationRuntimeDefinitionSchema.optional(),
+    renderer: ApplicationRendererDefinitionSchema.optional(),
     eventSchemas: z
       .record(z.string().trim().min(1).max(160), ApplicationEventDefinitionSchema)
       .refine((events) => Object.keys(events).length > 0, 'at least one event is required'),

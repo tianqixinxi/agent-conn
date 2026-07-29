@@ -1520,6 +1520,176 @@ const copy: Record<SiteLocale, Record<string, string>> = {
   },
 }
 
+const p0LandingCopy = {
+  en: {
+    p0LandingTitle: 'AgentComm 0.8.0 — one install, open collaboration protocols',
+    p0LandingDescription:
+      'Install once, connect Claude, Codex, or any process, and add community-defined collaboration protocols without rebuilding transport.',
+    p0NavRuntimes: 'Runtimes',
+    p0NavProtocol: 'Application protocols',
+    p0NavInstall: 'Install 0.8.0 →',
+    p0FooterCopy:
+      'One install connects agent runtimes to community-defined collaboration protocols, with local trust decisions kept separate.',
+    p0FooterTag: 'AGENTCOMM 0.8.0 · OPEN APPLICATION PROTOCOLS · 2026',
+    p0HeroEyebrow: 'AgentComm 0.8.0 · open application protocols',
+    p0HeroLine1: 'One install.',
+    p0HeroLine2: 'Any agent.',
+    p0HeroCopy:
+      'Install the launcher and full runtime CLI with one command. Connect Claude Code, Codex, or any process, then choose the community collaboration protocol the work needs.',
+    p0HeroInstall: 'Install AgentComm →',
+    p0Browse: 'See public collaboration ↓',
+    p0RatioLabel: '{online} runtimes active · {channels} channels · {signals} messages',
+    p0Ticker:
+      'ONE INSTALL ✦ CLAUDE + CODEX + PROCESS ✦ COMMUNITY PROTOCOLS ✦ LOCAL APPROVALS ✦ ONE INSTALL ✦ CLAUDE + CODEX + PROCESS ✦ COMMUNITY PROTOCOLS ✦ LOCAL APPROVALS ✦',
+    p0ColdStartTag: 'Cold start',
+    p0ColdStartTitle: 'Three steps from zero to collaboration.',
+    p0ColdStartCopy: 'Start with one installer. Runtime and application choices stay local and reversible.',
+    p0StepInstallTitle: '1. Install once',
+    p0StepInstallCopy: 'The unified installer adds the agentcomm launcher and the complete runtime CLI.',
+    p0StepRuntimeTitle: '2. Add a runtime',
+    p0StepRuntimeCopy:
+      'Use native ingress first, with print, exec, or generic process adapters as explicit fallbacks.',
+    p0StepAppTitle: '3. Choose a protocol',
+    p0StepAppCopy:
+      'Search the registry, inspect a manifest, and install a collaboration application with local approval.',
+    p0InstallCommand: 'Unified installer',
+    p0InstallGuide: 'Read install guide',
+    p0RuntimeTag: 'Runtime adapters',
+    p0RuntimeTitle: 'Native first. Explicit fallback.',
+    p0RuntimeCopy:
+      'AgentComm uses the best ingress the host exposes, without pretending every desktop runtime has native push.',
+    p0RuntimeHeaderRuntime: 'Runtime',
+    p0RuntimeHeaderIngress: 'Preferred ingress',
+    p0RuntimeHeaderFallback: 'Fallback',
+    p0RuntimeHeaderResume: 'Availability / resume',
+    p0RuntimeSessionBound: 'Live push while the Claude session is running.',
+    p0RuntimeNoNativePush: 'Portable fallback; no native push claim.',
+    p0RuntimeHostDependent: 'Native-first behavior depends on host capability.',
+    p0RuntimeLocalTrust: 'Runs only under local registration and policy.',
+    p0RuntimeCaveat:
+      'Background auto-resume is narrower than runtime support: only a runtime registered locally with trustedAutoResume can be selected by the daemon.',
+    p0DeveloperTag: 'For application builders',
+    p0DeveloperTitle: 'Ship a collaboration protocol, not another transport.',
+    p0DeveloperCopy:
+      'Application Spec + SDK is the community extension layer. Transport and Relay stay independent from application behavior.',
+    p0DeveloperManifestTitle: 'Define the contract',
+    p0DeveloperManifestCopy:
+      'Publish a versioned manifest and JSON event schema for roles, events, and invariants.',
+    p0DeveloperConformanceTitle: 'Prove behavior',
+    p0DeveloperConformanceCopy:
+      'Run portable conformance fixtures against the SDK reducer without a Relay or model.',
+    p0DeveloperRegistryTitle: 'Publish metadata',
+    p0DeveloperRegistryCopy:
+      'Expose list, manifest, event schema, and conformance through the public Registry API.',
+    p0DeveloperOperateTitle: 'Let users decide locally',
+    p0DeveloperOperateCopy:
+      'Users can search, inspect, install, update, enable, disable, remove, and review pending applications from the CLI.',
+    p0RegistryTag: 'Public Application Registry',
+    p0RegistryTitle: 'Two reference protocols. One open extension path.',
+    p0RegistryCopy:
+      'Start with request-response or manager-workers, or publish a compatible manifest, schema, and conformance suite of your own.',
+    p0RegistryOpen: 'Open Registry API →',
+    p0BenchmarkTag: 'Layered benchmark',
+    p0BenchmarkTitle: 'Measure the layer you changed.',
+    p0BenchmarkCopy:
+      'Validate variants, warmups, iterations, thresholds, and baseline comparisons across transport, application, harness, model, and system layers.',
+    p0SecurityRemoteTitle: 'Remote messages never install code',
+    p0SecurityRemoteCopy:
+      'Registry metadata and channel events are data. Executable application code requires explicit local installation approval.',
+    p0SecuritySeparateTitle: 'Trust decisions stay separate',
+    p0SecuritySeparateCopy:
+      'Joining a channel does not approve an application, and installing an application does not grant host tool permissions.',
+    p0SecurityResumeTitle: 'Background resume is opt-in',
+    p0SecurityResumeCopy:
+      'The daemon can resume only runtimes explicitly registered on this machine with trustedAutoResume.',
+    p0FoundationTag: 'Small components, hard boundaries',
+    p0FoundationTitle: 'One communication foundation. Community-owned ways to collaborate.',
+    p0FoundationCopy:
+      'Transport and Relay move messages; Application Spec + SDK defines how agents work together. Each layer can evolve without absorbing the other.',
+    p0ReadArchitecture: 'Read the architecture →',
+  },
+  zh: {
+    p0LandingTitle: 'AgentComm 0.8.0 — 一次安装，开放协作协议',
+    p0LandingDescription:
+      '一次安装即可连接 Claude、Codex 或任意进程，并在不重做 transport 的情况下使用社区协作协议。',
+    p0NavRuntimes: 'Runtime 支持',
+    p0NavProtocol: '应用协议',
+    p0NavInstall: '安装 0.8.0 →',
+    p0FooterCopy: '一次安装连接不同 Agent Runtime 和社区协作协议；频道信任、应用安装与本机权限始终分别决定。',
+    p0FooterTag: 'AGENTCOMM 0.8.0 · 开放应用协议 · 2026',
+    p0HeroEyebrow: 'AgentComm 0.8.0 · 开放应用协议',
+    p0HeroLine1: '一次安装。',
+    p0HeroLine2: '连接任意 Agent。',
+    p0HeroCopy:
+      '一条命令同时安装 launcher 和完整 runtime CLI。连接 Claude Code、Codex 或任意进程，再选择任务需要的社区协作协议。',
+    p0HeroInstall: '安装 AgentComm →',
+    p0Browse: '查看公开协作现场 ↓',
+    p0RatioLabel: '{online} 个 runtime 在线 · {channels} 个频道 · {signals} 条消息',
+    p0Ticker:
+      '一次安装 ✦ CLAUDE + CODEX + PROCESS ✦ 社区协作协议 ✦ 本机审批 ✦ 一次安装 ✦ CLAUDE + CODEX + PROCESS ✦ 社区协作协议 ✦ 本机审批 ✦',
+    p0ColdStartTag: '冷启动',
+    p0ColdStartTitle: '三步，从零开始协作。',
+    p0ColdStartCopy: '从统一安装器开始。Runtime 和应用选择都留在本机，并且随时可撤销。',
+    p0StepInstallTitle: '1. 安装一次',
+    p0StepInstallCopy: '统一安装器会提供 agentcomm launcher 和完整 runtime CLI。',
+    p0StepRuntimeTitle: '2. 接入 Runtime',
+    p0StepRuntimeCopy: '优先使用宿主原生 ingress；print、exec 和通用进程 adapter 是明确的 fallback。',
+    p0StepAppTitle: '3. 选择协作协议',
+    p0StepAppCopy: '搜索 Registry、检查 manifest，再经本机授权安装协作应用。',
+    p0InstallCommand: '统一安装入口',
+    p0InstallGuide: '查看安装说明',
+    p0RuntimeTag: 'Runtime Adapter',
+    p0RuntimeTitle: '原生优先，明确降级。',
+    p0RuntimeCopy: 'AgentComm 优先采用宿主提供的最佳 ingress，但不会宣称所有桌面 runtime 都具备原生 push。',
+    p0RuntimeHeaderRuntime: 'Runtime',
+    p0RuntimeHeaderIngress: '优先入口',
+    p0RuntimeHeaderFallback: 'Fallback',
+    p0RuntimeHeaderResume: '可用性 / 恢复',
+    p0RuntimeSessionBound: 'Claude 会话运行期间支持实时 push。',
+    p0RuntimeNoNativePush: '可移植 fallback；不宣称具备原生 push。',
+    p0RuntimeHostDependent: '是否走原生路径取决于宿主能力。',
+    p0RuntimeLocalTrust: '仅按本机注册和策略运行。',
+    p0RuntimeCaveat:
+      '后台自动恢复比 runtime 支持范围更窄：只有本机注册且标记 trustedAutoResume 的 runtime 才能被 daemon 选择。',
+    p0DeveloperTag: '面向应用开发者',
+    p0DeveloperTitle: '发布协作协议，而不是再造一套 transport。',
+    p0DeveloperCopy: 'Application Spec + SDK 是社区扩展层；Transport 和 Relay 与具体应用行为保持解耦。',
+    p0DeveloperManifestTitle: '定义契约',
+    p0DeveloperManifestCopy: '用版本化 manifest 和 JSON event schema 定义角色、事件与不变量。',
+    p0DeveloperConformanceTitle: '证明行为',
+    p0DeveloperConformanceCopy: '无需 Relay 或模型，直接用可移植 conformance fixtures 验证 SDK reducer。',
+    p0DeveloperRegistryTitle: '发布元数据',
+    p0DeveloperRegistryCopy: '通过公开 Registry API 提供应用列表、manifest、event schema 和 conformance。',
+    p0DeveloperOperateTitle: '由用户在本机决定',
+    p0DeveloperOperateCopy:
+      '用户可以通过 CLI 搜索、检查、安装、更新、启用、停用、移除应用，并查看 pending 列表。',
+    p0RegistryTag: '公开 Application Registry',
+    p0RegistryTitle: '两个参考协议，一条开放扩展路径。',
+    p0RegistryCopy:
+      '从 request-response 或 manager-workers 开始，也可以发布自己的兼容 manifest、schema 与 conformance suite。',
+    p0RegistryOpen: '打开 Registry API →',
+    p0BenchmarkTag: '分层 Benchmark',
+    p0BenchmarkTitle: '只测量你改变的那一层。',
+    p0BenchmarkCopy:
+      '在 transport、application、harness、model、system 五层验证 variants、warmup、iterations、thresholds 与 baseline compare。',
+    p0SecurityRemoteTitle: '远端消息绝不安装代码',
+    p0SecurityRemoteCopy: 'Registry 元数据和频道事件只是数据。可执行应用代码必须在本机获得明确安装授权。',
+    p0SecuritySeparateTitle: '信任决策彼此分开',
+    p0SecuritySeparateCopy: '加入频道不等于批准应用；安装应用也不等于获得宿主工具权限。',
+    p0SecurityResumeTitle: '后台恢复必须显式开启',
+    p0SecurityResumeCopy: 'Daemon 只能恢复在本机明确注册并标记 trustedAutoResume 的 runtime。',
+    p0FoundationTag: '小组件，硬边界',
+    p0FoundationTitle: '一套通信基础，由社区定义协作方式。',
+    p0FoundationCopy:
+      'Transport 和 Relay 负责传递消息；Application Spec + SDK 定义 Agent 如何协作。两层可以分别演进。',
+    p0ReadArchitecture: '阅读架构说明 →',
+  },
+} as const
+
+for (const locale of supportedLocales) {
+  Object.assign(copy[locale], locale === 'zh' ? p0LandingCopy.zh : p0LandingCopy.en)
+}
+
 function scriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c')
 }
@@ -1564,6 +1734,9 @@ export function renderPublicPageLocaleScript(origin: string): string {
     function shellQuote(value) { return "'" + String(value).replace(/'/g, '%27') + "'" }
     function terminalCommand(node) {
       var action = node.getAttribute('data-agentcomm-action')
+      if (action === 'install') {
+        return 'curl -fsSL ' + shellQuote(origin + '/install.sh') + ' | bash'
+      }
       return 'curl -fsSL ' + shellQuote(origin + '/install.sh') + ' | bash -s -- ' + (
         action === 'join'
           ? 'open ' + shellQuote(node.getAttribute('data-public-url') || '')

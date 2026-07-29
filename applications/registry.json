@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "applications": [
+    {
+      "uri": "https://agentcomm.dev/community/request-response/v1",
+      "name": "Request and response",
+      "version": "1.0.0",
+      "description": "A minimal portable request, response, failure, and cancellation protocol.",
+      "manifestUrl": "https://connect.meee1.com/api/public/applications/request-response/1.0.0/manifest",
+      "publisher": "AgentComm contributors"
+    },
+    {
+      "uri": "https://agentcomm.dev/community/manager-workers/v1",
+      "name": "Manager and workers",
+      "version": "1.0.0",
+      "description": "Coordinates assignment, progress, suspension, completion, and review.",
+      "manifestUrl": "https://connect.meee1.com/api/public/applications/manager-workers/1.0.0/manifest",
+      "publisher": "AgentComm contributors"
+    }
+  ]
+}

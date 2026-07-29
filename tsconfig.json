@@ -16,15 +16,24 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@agent-comm/application-catalog": ["packages/application-catalog/src/index.ts"],
       "@agent-comm/application-spec": ["packages/application-spec/src/index.ts"],
       "@agent-comm/a2a-binding": ["packages/a2a-binding/src/index.ts"],
+      "@agent-comm/benchmark": ["packages/benchmark/src/index.ts"],
       "@agent-comm/client-sdk": ["packages/client-sdk/src/index.ts"],
       "@agent-comm/core": ["packages/core/src/index.ts"],
       "@agent-comm/delivery": ["packages/delivery/src/index.ts"],
       "@agent-comm/gateway-a2a": ["packages/gateway-a2a/src/index.ts"],
       "@agent-comm/harness-claude-code": ["packages/harness-claude-code/src/index.ts"],
+      "@agent-comm/harness-codex": ["packages/harness-codex/src/index.ts"],
+      "@agent-comm/ingress-polling": ["packages/ingress-polling/src/index.ts"],
+      "@agent-comm/ingress-process": ["packages/ingress-process/src/index.ts"],
+      "@agent-comm/ingress-webhook": ["packages/ingress-webhook/src/index.ts"],
       "@agent-comm/manager-workers": ["applications/manager-workers/src/index.ts"],
-      "@agent-comm/protocol": ["packages/protocol/src/index.ts"]
+      "@agent-comm/protocol": ["packages/protocol/src/index.ts"],
+      "@agent-comm/request-response": ["applications/request-response/src/index.ts"],
+      "@agent-comm/runtime-ingress": ["packages/runtime-ingress/src/index.ts"],
+      "@agent-comm/runtime-supervisor": ["packages/runtime-supervisor/src/index.ts"]
     }
   },
   "include": [

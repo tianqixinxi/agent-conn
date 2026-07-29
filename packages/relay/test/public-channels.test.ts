@@ -52,19 +52,52 @@ describe('relay public channels', () => {
     expect(homeHtml).toContain("var storageKey = 'agentcomm.site.locale'")
     expect(homeHtml).toContain('window.localStorage.setItem(storageKey, preference)')
     expect(homeHtml).toContain('window.localStorage.removeItem(storageKey)')
-    expect(homeHtml).toContain('data-i18n="heroCopy"')
+    expect(homeHtml).toContain('data-i18n="p0HeroCopy"')
     expect(homeHtml).toContain('data-agentcomm-action="create"')
-    expect(homeHtml).toContain('Give Claude')
-    expect(homeHtml).toContain('Three steps, then let the Claude sessions work.')
+    expect(homeHtml).toContain('data-agentcomm-action="install"')
+    expect(homeHtml).toContain("if (action === 'install')")
+    expect(homeHtml).toContain("' + shellQuote(origin + '/install.sh') + ' | bash'")
+    expect(homeHtml).toContain('AgentComm 0.8.0')
+    expect(homeHtml).toContain('One install.')
+    expect(homeHtml).toContain('Any agent.')
+    expect(homeHtml).toContain('Three steps from zero to collaboration.')
+    expect(homeHtml.match(/class="step-card"/g)).toHaveLength(3)
     expect(homeHtml).toContain('data-value-online="0"')
-    expect(homeHtml).toContain('Claude に')
-    expect(homeHtml).toContain('Dale a Claude')
-    expect(homeHtml).toContain('Дайте Claude')
     expect(homeHtml).toContain('https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md')
-    expect(homeHtml).toContain('From invitation to result, without managing the plumbing.')
-    expect(homeHtml).toContain('Invite another agent')
-    expect(homeHtml).toContain('Routine work flows. Sensitive actions stop.')
-    expect(homeHtml).toContain('Build on the same open foundation.')
+    expect(homeHtml).toContain('Native first. Explicit fallback.')
+    expect(homeHtml).toContain('Claude Code native channel')
+    expect(homeHtml).toContain('Claude print-mode')
+    expect(homeHtml).toContain('Codex app-server')
+    expect(homeHtml).toContain('Codex exec')
+    expect(homeHtml).toContain('Generic process')
+    expect(homeHtml).toContain('without pretending every desktop runtime has native push')
+    expect(homeHtml).toContain('trustedAutoResume')
+    expect(homeHtml).toContain('agentcomm runtime add | list | remove')
+    expect(homeHtml).toContain('agentcomm daemon install | status | stop | uninstall')
+    expect(homeHtml).toContain('Ship a collaboration protocol, not another transport.')
+    expect(homeHtml).toContain('/api/public/applications')
+    expect(homeHtml).toContain('request-response · 1.0.0')
+    expect(homeHtml).toContain('manager-workers · 1.0.0')
+    expect(homeHtml).toContain('agentcomm app search manager-workers')
+    expect(homeHtml).toContain('agentcomm app inspect &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app install &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app update &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app enable &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app disable &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app remove &lt;uri&gt;')
+    expect(homeHtml).toContain('agentcomm app pending')
+    expect(homeHtml).toContain('transport</span>')
+    expect(homeHtml).toContain('application</span>')
+    expect(homeHtml).toContain('harness</span>')
+    expect(homeHtml).toContain('model</span>')
+    expect(homeHtml).toContain('system</span>')
+    expect(homeHtml).toContain('agentcomm benchmark validate suite.json')
+    expect(homeHtml).toContain('agentcomm benchmark run suite.json')
+    expect(homeHtml).toContain('agentcomm benchmark compare report.json')
+    expect(homeHtml).toContain('Remote messages never install code')
+    expect(homeHtml).toContain('Joining a channel does not approve an application')
+    expect(homeHtml).not.toContain('official marketplace')
+    expect(homeHtml).not.toContain('all desktop runtimes have native push')
     expect(homeHtml).not.toContain('data-i18n="layerCommunityTitle"')
     expect(homeHtml).not.toContain('data-i18n="referenceCaveat"')
     for (const packageName of [
@@ -79,17 +112,23 @@ describe('relay public channels', () => {
     ]) {
       expect(homeHtml).not.toContain(packageName)
     }
+    expect(homeHtml).toContain('data-title-key="p0LandingTitle"')
+    expect(homeHtml.split('"p0LandingTitle":')).toHaveLength(10)
     for (const key of [
-      'protocolCopy',
-      'componentsTitle',
-      'componentFoundationTitle',
-      'componentApplicationTitle',
-      'componentRuntimeTitle',
-      'componentServicesTitle',
-      'securityTitle',
-      'privacyCopy',
-      'decisionsCopy',
-      'extensionsCopy',
+      'p0HeroCopy',
+      'p0HeroInstall',
+      'p0ColdStartTitle',
+      'p0StepRuntimeCopy',
+      'p0RuntimeTitle',
+      'p0RuntimeCaveat',
+      'p0DeveloperTitle',
+      'p0DeveloperRegistryCopy',
+      'p0RegistryTitle',
+      'p0BenchmarkCopy',
+      'p0SecurityRemoteCopy',
+      'p0SecuritySeparateCopy',
+      'p0SecurityResumeCopy',
+      'p0FoundationTitle',
     ]) {
       expect(homeHtml).toContain(`data-i18n="${key}"`)
       expect(homeHtml.split(`"${key}":`)).toHaveLength(10)

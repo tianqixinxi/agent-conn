@@ -84,7 +84,16 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
 
   program.hook('preAction', async (thisCommand, actionCommand) => {
     // doctor 必须在 engine 起不来时也能跑完诊断,不走这条会硬抛的路径(见下方 doctor 命令自身实现)
-    if (actionCommand.name() === 'doctor' || actionCommand.name() === 'install-launcher') return
+    if (
+      actionCommand.name() === 'doctor' ||
+      actionCommand.name() === 'install-launcher' ||
+      actionCommand.parent?.name() === 'app' ||
+      actionCommand.parent?.name() === 'runtime' ||
+      actionCommand.parent?.name() === 'daemon' ||
+      actionCommand.parent?.name() === 'benchmark'
+    ) {
+      return
+    }
     const globals = thisCommand.opts<{ profile?: string; json?: boolean }>()
     ctx = await createCliContext({
       profile: globals.profile,
@@ -101,6 +110,20 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
   function requireCtx(): CliContext {
     if (!ctx) throw new Error('agent-comm: internal error: cli context not initialized')
     return ctx
+  }
+
+  function utilityProfile(): ProfilePaths {
+    const globals = program.opts<{ profile?: string }>()
+    return resolveProfile({
+      profile: globals.profile,
+      rootDir: opts.rootDir,
+      env: opts.env,
+    })
+  }
+
+  function utilityResult(value: unknown, human: string): void {
+    const globals = program.opts<{ json?: boolean }>()
+    stdout(globals.json ? `${JSON.stringify(value)}\n` : `${human}\n`)
   }
 
   // —— init ——
@@ -423,6 +446,528 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
             .join('\n')
         : '(无审计记录)'
       printResult(c, entries, human)
+    })
+
+  // —— community application lifecycle ——
+  const app = program.command('app').description('社区协作协议:创建 / 校验 / 搜索 / 安装 / 启用 / 更新')
+
+  app
+    .command('list', { isDefault: true })
+    .description('列出已安装协议及频道启用状态')
+    .action(async () => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const applications = applicationCatalog(profile.rootDir).list()
+      utilityResult(
+        applications,
+        applications.length
+          ? applications
+              .map(
+                (item) =>
+                  `- ${item.name} ${item.version}\n  ${item.uri}\n  enabled=${
+                    item.enabled.map((enabled) => enabled.channelId).join(',') || '(none)'
+                  }`,
+              )
+              .join('\n')
+          : '(未安装任何社区协议)',
+      )
+    })
+
+  app
+    .command('pending')
+    .description('列出尚待输入、审批或完成的 application contexts')
+    .option('--channel <channelId>')
+    .action(async (cmdOpts: { channel?: string }) => {
+      const profile = utilityProfile()
+      const { openStore } = await import('../store/index.js')
+      const store = openStore(profile.storePath)
+      try {
+        const pending = store.applicationRuntime.listUnfinished(cmdOpts.channel)
+        utilityResult(
+          pending,
+          pending.length
+            ? pending
+                .map(
+                  (item) =>
+                    `- ${item.extensionUri}\n  channel=${item.channelId} context=${item.contextId} state=${item.taskState}`,
+                )
+                .join('\n')
+            : '(没有待处理的 application context)',
+        )
+      } finally {
+        store.close()
+      }
+    })
+
+  app
+    .command('search')
+    .description('搜索公开协议索引')
+    .argument('[query]', '名称、URI 或描述关键词', '')
+    .option(
+      '--registry <url>',
+      '协议索引 URL',
+      process.env.AGENT_COMM_APPLICATION_REGISTRY ?? 'https://connect.meee1.com/api/public/applications',
+    )
+    .action(async (query: string, cmdOpts: { registry: string }) => {
+      const { searchApplicationRegistry } = await import('@agent-comm/application-catalog')
+      const result = await searchApplicationRegistry(cmdOpts.registry, query)
+      utilityResult(
+        result,
+        result.length
+          ? result
+              .map((item) => `- ${item.name} ${item.version}\n  ${item.uri}\n  manifest=${item.manifestUrl}`)
+              .join('\n')
+          : '(没有匹配协议)',
+      )
+    })
+
+  app
+    .command('install')
+    .description('安装本地目录或 HTTPS manifest;不会因远端消息自动执行')
+    .argument('<source>', '协议目录、manifest 文件或 HTTPS manifest URL')
+    .option('--allow-code', '审查后允许安装包内声明的可执行 consumer', false)
+    .action(async (source: string, cmdOpts: { allowCode?: boolean }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const installed = await applicationCatalog(profile.rootDir).install(source, {
+        allowCode: cmdOpts.allowCode,
+      })
+      utilityResult(
+        installed,
+        `已安装 ${installed.name} ${installed.version}\n${installed.uri}\n尚未启用；使用 app enable 绑定频道。`,
+      )
+    })
+
+  app
+    .command('inspect')
+    .description('查看已安装协议的 manifest、信任与频道绑定')
+    .argument('<uri>', '协议 URI')
+    .option('--version <version>')
+    .action(async (uri: string, cmdOpts: { version?: string }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const catalog = applicationCatalog(profile.rootDir)
+      const installed = catalog.get(uri, cmdOpts.version)
+      if (!installed) throw new Error(`application is not installed: ${uri}`)
+      const manifest = catalog.manifest(installed)
+      utilityResult(
+        { installed, manifest },
+        [
+          `${installed.name} ${installed.version}`,
+          installed.uri,
+          `source=${installed.source}`,
+          `executableTrusted=${installed.executableTrusted}`,
+          `enabled=${installed.enabled.map((item) => item.channelId).join(',') || '(none)'}`,
+          `events=${Object.keys(manifest.eventSchemas).join(',')}`,
+        ].join('\n'),
+      )
+    })
+
+  app
+    .command('update')
+    .description('从原始来源或公开索引更新；保留显式频道绑定并保留旧版用于回滚')
+    .argument('<uri>', '已安装协议 URI')
+    .option('--source <source>', '覆盖原始来源')
+    .option('--registry <url>', '从协议索引选择同 URI 的最新版本')
+    .option('--allow-code', '审查后允许新版可执行 consumer', false)
+    .action(async (uri: string, cmdOpts: { source?: string; registry?: string; allowCode?: boolean }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const catalog = applicationCatalog(profile.rootDir)
+      const current = catalog.get(uri)
+      if (!current) throw new Error(`application is not installed: ${uri}`)
+      let source = cmdOpts.source ?? current.source
+      if (cmdOpts.registry) {
+        const { compareApplicationVersions, fetchApplicationRegistry } = await import(
+          '@agent-comm/application-catalog'
+        )
+        const candidates = (await fetchApplicationRegistry(cmdOpts.registry))
+          .filter((item) => item.uri === uri)
+          .sort((a, b) => compareApplicationVersions(b.version, a.version))
+        const candidate = candidates[0]
+        if (!candidate) throw new Error(`application is not present in registry: ${uri}`)
+        source = candidate.manifestUrl
+      }
+      const updated = await catalog.update(source, { allowCode: cmdOpts.allowCode })
+      utilityResult(
+        updated,
+        `已更新 ${updated.name}: ${current.version} -> ${updated.version}; 频道绑定已保留`,
+      )
+    })
+
+  app
+    .command('enable')
+    .description('为指定频道启用一个已安装协议')
+    .argument('<uri>', '协议 URI')
+    .requiredOption('--channel <channelId>', 'opaque channelId；可用 * 作为所有频道')
+    .option('--config <json>', 'consumer 配置 JSON')
+    .action(async (uri: string, cmdOpts: { channel: string; config?: string }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const config = cmdOpts.config === undefined ? undefined : JSON.parse(cmdOpts.config)
+      const enabled = applicationCatalog(profile.rootDir).enable(uri, cmdOpts.channel, config)
+      utilityResult(enabled, `已为频道 ${cmdOpts.channel} 启用 ${enabled.name} ${enabled.version}`)
+    })
+
+  app
+    .command('disable')
+    .description('从指定频道禁用协议')
+    .argument('<uri>', '协议 URI')
+    .requiredOption('--channel <channelId>', 'opaque channelId')
+    .action(async (uri: string, cmdOpts: { channel: string }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const changed = applicationCatalog(profile.rootDir).disable(uri, cmdOpts.channel)
+      utilityResult({ changed, uri, channel: cmdOpts.channel }, changed ? '已禁用' : '未找到启用记录')
+    })
+
+  app
+    .command('remove')
+    .description('删除已安装协议；不会删除历史 application state')
+    .argument('<uri>', '协议 URI')
+    .option('--version <version>')
+    .action(async (uri: string, cmdOpts: { version?: string }) => {
+      const profile = utilityProfile()
+      const { applicationCatalog } = await import('../runtime/daemon.js')
+      const removed = applicationCatalog(profile.rootDir).remove(uri, cmdOpts.version)
+      utilityResult({ removed, uri, version: cmdOpts.version }, removed ? '已删除' : '未找到协议')
+    })
+
+  app
+    .command('create')
+    .description('创建一个社区协议包模板')
+    .argument('<directory>')
+    .requiredOption('--name <name>')
+    .requiredOption('--uri <uri>')
+    .option('--description <description>')
+    .action(async (directory: string, cmdOpts: { name: string; uri: string; description?: string }) => {
+      const { scaffoldApplicationPackage } = await import('@agent-comm/application-catalog')
+      const target = scaffoldApplicationPackage(directory, cmdOpts)
+      utilityResult({ target }, `已创建协议模板: ${target}`)
+    })
+
+  app
+    .command('validate')
+    .description('验证 manifest 与 portable conformance fixtures')
+    .argument('<source>')
+    .action(async (source: string) => {
+      const { validateApplicationPackage } = await import('@agent-comm/application-catalog')
+      const result = validateApplicationPackage(source)
+      utilityResult(
+        { manifest: result.manifest, fixtureCount: result.fixtures.length },
+        `协议有效: ${result.manifest.name} ${result.manifest.version}; ${result.fixtures.length} 个 fixture`,
+      )
+    })
+
+  app
+    .command('test')
+    .description('运行内置 reference consumer 的 conformance；其他协议执行 portable 校验')
+    .argument('<source>')
+    .action(async (source: string) => {
+      const { validateApplicationPackage } = await import('@agent-comm/application-catalog')
+      const { ApplicationConsumerRegistry, assertApplicationConformance } = await import(
+        '@agent-comm/client-sdk'
+      )
+      const validated = validateApplicationPackage(source)
+      const registry = new ApplicationConsumerRegistry()
+      if (validated.manifest.uri === 'https://agentcomm.dev/community/manager-workers/v1') {
+        const { createManagerWorkersConsumer } = await import('@agent-comm/manager-workers')
+        registry.register(
+          createManagerWorkersConsumer({
+            role: 'manager',
+            alias: 'manager',
+            managerAlias: 'manager',
+            autoResult: { summary: 'three verified points' },
+          }),
+        )
+      } else if (validated.manifest.uri === 'https://agentcomm.dev/community/request-response/v1') {
+        const { createRequestResponseConsumer } = await import('@agent-comm/request-response')
+        registry.register(createRequestResponseConsumer({ alias: 'requester' }))
+      }
+      const results =
+        registry.supportedExtensions().length === 0
+          ? []
+          : await Promise.all(
+              validated.fixtures.map((fixture) => assertApplicationConformance(fixture, registry)),
+            )
+      utilityResult(
+        {
+          valid: true,
+          executableConformance: results,
+          fixtureCount: validated.fixtures.length,
+        },
+        results.length > 0
+          ? `${results.length} 个 conformance fixture 全部通过`
+          : `portable package 校验通过；${validated.fixtures.length} 个 fixture 由第三方 consumer conformance runner 执行`,
+      )
+    })
+
+  // —— runtime registry and daemon ——
+  const runtime = program.command('runtime').description('管理本机受信任 Agent Runtime')
+
+  runtime
+    .command('list', { isDefault: true })
+    .description('列出已注册 runtime 与在线状态')
+    .action(async () => {
+      const profile = utilityProfile()
+      const { runtimeRegistry } = await import('../runtime/daemon.js')
+      const registry = runtimeRegistry(profile.rootDir)
+      const statuses = new Map(registry.statuses().map((item) => [item.id, item]))
+      const registrations = registry.registrations()
+      utilityResult(
+        { registrations, statuses: [...statuses.values()] },
+        registrations.length
+          ? registrations
+              .map((item) => {
+                const status = statuses.get(item.id)
+                return `- ${item.id}  harness=${item.harness}  state=${status?.state ?? 'registered'}\n  profile=${item.profile} channels=${item.channels.join(',')}`
+              })
+              .join('\n')
+          : '(未注册 runtime)',
+      )
+    })
+
+  runtime
+    .command('add')
+    .description('注册一个只恢复明确频道的 Runtime')
+    .argument('<id>')
+    .requiredOption('--channel <channelIds...>', '一个或多个 opaque channelId')
+    .option('--harness <harness>', 'auto|claude-code|codex-app-server|codex-exec|process', 'auto')
+    .option('--runtime-profile <profile>', 'Runtime 身份 profile')
+    .option('--cwd <path>')
+    .option('--command <path>')
+    .option('--arg <args...>')
+    .option('--application <uris...>')
+    .option('--trusted-auto-resume', '允许 daemon 恢复这些明确列出的频道', false)
+    .action(
+      async (
+        id: string,
+        cmdOpts: {
+          channel: string[]
+          harness: string
+          runtimeProfile?: string
+          cwd?: string
+          command?: string
+          arg?: string[]
+          application?: string[]
+          trustedAutoResume?: boolean
+        },
+      ) => {
+        const profile = utilityProfile()
+        const { RuntimeHarnessSchema } = await import('@agent-comm/runtime-supervisor')
+        const { normalizeRuntimeRegistration, runtimeRegistry } = await import('../runtime/daemon.js')
+        const registration = runtimeRegistry(profile.rootDir).register(
+          normalizeRuntimeRegistration({
+            id,
+            profile: cmdOpts.runtimeProfile ?? profile.name,
+            harness: RuntimeHarnessSchema.parse(cmdOpts.harness),
+            channels: cmdOpts.channel,
+            cwd: cmdOpts.cwd,
+            command: cmdOpts.command,
+            args: cmdOpts.arg ?? [],
+            applications: cmdOpts.application ?? [],
+            trustedAutoResume: cmdOpts.trustedAutoResume ?? false,
+          }),
+        )
+        utilityResult(
+          registration,
+          `已注册 runtime ${id}; daemon 只会恢复: ${registration.channels.join(', ')}`,
+        )
+      },
+    )
+
+  runtime
+    .command('remove')
+    .argument('<id>')
+    .action(async (id: string) => {
+      const profile = utilityProfile()
+      const { runtimeRegistry } = await import('../runtime/daemon.js')
+      const removed = runtimeRegistry(profile.rootDir).remove(id)
+      utilityResult({ removed, id }, removed ? '已删除 runtime' : '未找到 runtime')
+    })
+
+  const daemon = program.command('daemon').description('运行本机 AgentComm Runtime Supervisor')
+
+  daemon
+    .command('install')
+    .description('安装 launchd/systemd 用户服务；仅恢复已显式信任的频道')
+    .option('--no-start', '只写服务定义，不立即启动')
+    .action(async (cmdOpts: { start: boolean }) => {
+      const profile = utilityProfile()
+      const { runtimeRegistry } = await import('../runtime/daemon.js')
+      if (
+        cmdOpts.start &&
+        !runtimeRegistry(profile.rootDir)
+          .registrations()
+          .some((item) => item.trustedAutoResume)
+      ) {
+        throw new Error(
+          'register at least one runtime with --trusted-auto-resume before starting the service',
+        )
+      }
+      const { installDaemonService } = await import('../runtime/service.js')
+      const installed = installDaemonService({ profile, start: cmdOpts.start })
+      utilityResult(installed, `daemon 服务已安装: ${installed.path}${installed.started ? '（已启动）' : ''}`)
+    })
+
+  daemon
+    .command('uninstall')
+    .description('停止并移除 launchd/systemd 用户服务；保留 profile 数据')
+    .action(async () => {
+      const { uninstallDaemonService } = await import('../runtime/service.js')
+      const result = uninstallDaemonService()
+      utilityResult(result, result.removed ? `已移除 ${result.path}` : '未找到 daemon 服务')
+    })
+
+  daemon
+    .command('run', { isDefault: true })
+    .description('前台运行；由 launchd/systemd 可转为登录常驻服务')
+    .option('--once', '启动、同步一次并退出（验收用）', false)
+    .action(async (cmdOpts: { once?: boolean }) => {
+      const profile = utilityProfile()
+      const { runRuntimeDaemon } = await import('../runtime/daemon.js')
+      await runRuntimeDaemon({ rootDir: profile.rootDir, once: cmdOpts.once })
+    })
+
+  daemon
+    .command('status')
+    .description('读取持久 registry 与 daemon heartbeat')
+    .action(async () => {
+      const profile = utilityProfile()
+      const { runtimeRegistry } = await import('../runtime/daemon.js')
+      const registry = runtimeRegistry(profile.rootDir)
+      const statuses = registry.statuses().map((item) => {
+        let processAlive = false
+        if (item.pid) {
+          try {
+            process.kill(item.pid, 0)
+            processAlive = true
+          } catch {
+            processAlive = false
+          }
+        }
+        return { ...item, processAlive }
+      })
+      utilityResult(
+        statuses,
+        statuses.length
+          ? statuses
+              .map(
+                (item) =>
+                  `- ${item.id} ${item.state} adapter=${item.adapterId ?? '-'} pid=${item.pid ?? '-'} alive=${item.processAlive}`,
+              )
+              .join('\n')
+          : '(daemon 尚无 runtime 状态)',
+      )
+    })
+
+  daemon
+    .command('stop')
+    .description('向当前 registry 中的 daemon 进程发送 SIGTERM')
+    .action(async () => {
+      const profile = utilityProfile()
+      const { runtimeRegistry, stoppableRuntimePids } = await import('../runtime/daemon.js')
+      const pids = stoppableRuntimePids(runtimeRegistry(profile.rootDir).statuses())
+      const stopped: number[] = []
+      for (const pid of pids) {
+        try {
+          process.kill(pid, 'SIGTERM')
+          stopped.push(pid)
+        } catch {
+          // Stale heartbeat; daemon status will report it offline.
+        }
+      }
+      utilityResult(
+        { stopped },
+        stopped.length ? `已停止 daemon pid=${stopped.join(',')}` : '没有在线 daemon',
+      )
+    })
+
+  const benchmark = program
+    .command('benchmark')
+    .description('分层评测 transport / application / harness / model / system')
+
+  benchmark
+    .command('validate')
+    .argument('<suite>', 'benchmark suite JSON')
+    .action(async (suite: string) => {
+      const { readFileSync } = await import('node:fs')
+      const { BenchmarkSuiteSchema } = await import('@agent-comm/benchmark')
+      const parsed = BenchmarkSuiteSchema.parse(JSON.parse(readFileSync(suite, 'utf8')))
+      utilityResult(parsed, `benchmark suite 有效: ${parsed.name}; ${parsed.cases.length} cases`)
+    })
+
+  benchmark
+    .command('run')
+    .argument('<suite>', 'benchmark suite JSON')
+    .requiredOption('--runner <absolute-path>', '受信任 runner 的绝对可执行路径')
+    .option('--allow-runner-exec', '确认允许执行这个本机 runner', false)
+    .option('--arg <args...>')
+    .option('--cwd <path>')
+    .option('--output <path>', '写入完整 JSON report')
+    .action(
+      async (
+        suite: string,
+        cmdOpts: {
+          runner: string
+          allowRunnerExec?: boolean
+          arg?: string[]
+          cwd?: string
+          output?: string
+        },
+      ) => {
+        if (!cmdOpts.allowRunnerExec) {
+          throw new Error('benchmark runner execution requires --allow-runner-exec')
+        }
+        const { readFileSync, writeFileSync } = await import('node:fs')
+        const { BenchmarkSuiteSchema, createProcessBenchmarkExecutor, runBenchmarkSuite } = await import(
+          '@agent-comm/benchmark'
+        )
+        const parsed = BenchmarkSuiteSchema.parse(JSON.parse(readFileSync(suite, 'utf8')))
+        const report = await runBenchmarkSuite(
+          parsed,
+          createProcessBenchmarkExecutor({
+            command: cmdOpts.runner,
+            args: cmdOpts.arg,
+            cwd: cmdOpts.cwd,
+            authorizedByOperator: true,
+          }),
+        )
+        if (cmdOpts.output) writeFileSync(cmdOpts.output, `${JSON.stringify(report, null, 2)}\n`)
+        process.exitCode = report.passed ? 0 : 1
+        utilityResult(
+          report,
+          [
+            `${report.passed ? 'PASS' : 'FAIL'} ${report.suite}`,
+            ...report.cases.map(
+              (item) =>
+                `${item.passed ? '✓' : '✗'} ${item.layer}/${item.id}: success=${item.successRate} correctness=${item.correctnessRate ?? '-'} p95=${item.latencyMs.p95}ms`,
+            ),
+          ].join('\n'),
+        )
+      },
+    )
+
+  benchmark
+    .command('compare')
+    .argument('<baseline>')
+    .argument('<candidate>')
+    .action(async (baseline: string, candidate: string) => {
+      const { readFileSync } = await import('node:fs')
+      const { compareBenchmarkReports } = await import('@agent-comm/benchmark')
+      const result = compareBenchmarkReports(
+        JSON.parse(readFileSync(baseline, 'utf8')),
+        JSON.parse(readFileSync(candidate, 'utf8')),
+      )
+      utilityResult(
+        result,
+        result.cases
+          .map(
+            (item) =>
+              `- ${item.id}: success ${item.successRateDelta >= 0 ? '+' : ''}${item.successRateDelta}; p95 ${item.p95LatencyDeltaMs >= 0 ? '+' : ''}${item.p95LatencyDeltaMs}ms`,
+          )
+          .join('\n') || '(没有可比较的 case)',
+      )
     })
 
   // —— doctor(不走 preAction 建的 ctx:engine 起不来也要把其余项跑完)——

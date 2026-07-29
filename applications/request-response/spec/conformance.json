@@ -1,0 +1,54 @@
+[
+  {
+    "name": "request-completes",
+    "extension": {
+      "uri": "https://agentcomm.dev/community/request-response/v1",
+      "version": "1.0.0"
+    },
+    "events": [
+      {
+        "eventType": "request.created",
+        "body": {
+          "requestId": "req-1",
+          "prompt": "Summarize the README"
+        }
+      },
+      {
+        "eventType": "response.created",
+        "body": {
+          "requestId": "req-1",
+          "result": {
+            "summary": "done"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "state": {
+        "requests": {
+          "req-1": {
+            "prompt": "Summarize the README",
+            "status": "completed",
+            "result": {
+              "summary": "done"
+            }
+          }
+        }
+      },
+      "taskState": "completed",
+      "effects": [
+        {
+          "type": "request-input",
+          "prompt": "Summarize the README"
+        },
+        {
+          "type": "complete",
+          "result": {
+            "summary": "done"
+          }
+        }
+      ],
+      "eventStatuses": ["reduced", "reduced"]
+    }
+  }
+]

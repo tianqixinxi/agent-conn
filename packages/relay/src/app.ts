@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import {
   AgentCommError,
   GetMembersRespSchema,
@@ -31,6 +33,7 @@ import {
 } from '@agent-comm/gateway-a2a'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
+import { applicationAsset, applicationManifest, applicationRegistry } from './application-registry.js'
 import { createAuthMiddleware, requireHeaderNode } from './auth.js'
 import { renderAgentCommLauncher, renderInstallerScript } from './bootstrap-scripts.js'
 import { errorStatus } from './http.js'
@@ -72,12 +75,29 @@ import {
 
 export interface RelayDeps {
   dbPath: string
+  /** Directory containing the single-file CLI bundle and its SQLite schemas. */
+  cliAssetDir?: string | undefined
   /**
    * Opt-in plaintext A2A gateway. Native AgentComm clients keep using the E2E wire endpoint; this
    * gateway terminates A2A at the relay and therefore belongs only in explicitly trusted deployments.
    */
   enableA2AIngress?: boolean | undefined
 }
+
+const CLI_ASSETS = {
+  'agent-comm-cli.mjs': {
+    filename: 'agent-comm-cli.mjs',
+    contentType: 'text/javascript; charset=UTF-8',
+  },
+  'schema.store.sql': {
+    filename: 'schema.store.sql',
+    contentType: 'text/plain; charset=UTF-8',
+  },
+  'schema.hub.sql': {
+    filename: 'schema.hub.sql',
+    contentType: 'text/plain; charset=UTF-8',
+  },
+} as const
 
 type Handler = (c: Context) => Promise<Response>
 
@@ -187,6 +207,23 @@ export function createApp(deps: RelayDeps): Hono {
 
   app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
+  app.get('/bin/:asset', (c) => {
+    const requestedAsset = c.req.param('asset')
+    if (!Object.hasOwn(CLI_ASSETS, requestedAsset)) return c.notFound()
+    const asset = CLI_ASSETS[requestedAsset as keyof typeof CLI_ASSETS]
+    const assetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
+    const assetPath = join(assetRoot, asset.filename)
+    // asset.filename comes from the closed constant map above; assetRoot is a local operator setting.
+    // codeql[js/path-injection]
+    if (!existsSync(assetPath)) return c.notFound()
+    // codeql[js/path-injection]
+    return c.body(readFileSync(assetPath), 200, {
+      'content-type': asset.contentType,
+      'cache-control': 'public, max-age=300',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+    })
+  })
 
   const publicHtml = (c: Context, html: string): Response =>
     c.body(html, 200, {
@@ -207,6 +244,17 @@ export function createApp(deps: RelayDeps): Hono {
   })
 
   app.get('/api/public/channels', (c) => c.json({ channels: listPublicChannels(db) }))
+  app.get('/api/public/applications', (c) => c.json(applicationRegistry(requestOrigin(c))))
+  app.get('/api/public/applications/:name/:version/manifest', (c) => {
+    const manifest = applicationManifest(c.req.param('name'), c.req.param('version'), requestOrigin(c))
+    return manifest ? c.json(manifest) : c.notFound()
+  })
+  app.get('/api/public/applications/:name/:version/:asset', (c) => {
+    const asset = c.req.param('asset')
+    if (asset !== 'events.schema.json' && asset !== 'conformance.json') return c.notFound()
+    const content = applicationAsset(c.req.param('name'), c.req.param('version'), asset)
+    return content ? c.json(content) : c.notFound()
+  })
   app.get('/api/public/channels/:channel', (c) => {
     const channelName = c.req.param('channel')
     if (!channelName) return c.notFound()

@@ -37,6 +37,11 @@ import {
   newRuntimeInstanceId,
   nowIso,
 } from '@agent-comm/core'
+import {
+  createCallbackIngressAdapter,
+  type RuntimeIngressAdapter,
+  type RuntimeIngressEvent,
+} from '@agent-comm/runtime-ingress'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
@@ -46,7 +51,7 @@ import { DEFAULT_INBOX_CAP, type ProfilePaths } from '../config.js'
 import type { Actor, Engine } from '../engine/api.js'
 import type { StoreHandle, TaskAuthorizationRepo } from '../store/index.js'
 
-const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.7.1' } as const
+const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.8.0' } as const
 const DEFAULT_POLL_MS = 1_000
 const MAX_PENDING_EVENTS = DEFAULT_INBOX_CAP
 export const DEFAULT_CHANNEL_RELAY_URL = 'https://connect.meee1.com'
@@ -116,6 +121,14 @@ export interface ChannelBridgeOptions {
   /** 用户可见的频道别名；身份 profile 仍按 Claude session 隔离。 */
   defaultAlias?: string | undefined
   notify?: ChannelNotifier | undefined
+  /**
+   * Harness-neutral inbound delivery. When omitted, the bridge uses Claude
+   * Code's native Channel notification. `notify` remains as a compatibility
+   * shim for existing callback integrations and tests.
+   */
+  ingress?: RuntimeIngressAdapter | undefined
+  /** Adapter factory for Harness APIs that need the just-created MCP server. */
+  ingressFactory?: ((server: McpServer) => RuntimeIngressAdapter) | undefined
   stderr?: ((chunk: string) => void) | undefined
   /** One short-lived harness run. It never owns channel membership. */
   runtimeInstanceId?: string | undefined
@@ -126,12 +139,29 @@ export interface ChannelBridgeOptions {
 
 export interface ChannelBridge {
   server: McpServer
+  ingress: RuntimeIngressAdapter
   runtimeInstanceId: string
+  /** Activate an existing durable membership without going through an MCP tool. */
+  activate(channel: string): Promise<void>
+  activeChannels(): readonly string[]
+  /** Harness-neutral outbound completion API; MCP operations call the same methods. */
+  respond(input: {
+    eventId: string
+    eventType: string
+    body: unknown
+    terminal?: boolean | undefined
+    contentType?: string | undefined
+  }): Promise<unknown>
+  reply(eventId: string, response: unknown, contentType?: string | undefined): Promise<unknown>
+  complete(eventId: string): Promise<unknown>
   /** 单轮同步，供测试和显式唤醒；正常运行由 start() 周期调用。 */
   pollOnce(): Promise<void>
   start(): void
   stop(): void
 }
+
+/** New name for non-Claude integrations; ChannelBridge remains API-compatible. */
+export type RuntimeHarnessBridge = ChannelBridge
 
 function textResult(value: unknown, isError = false) {
   return {
@@ -562,18 +592,89 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
     instructions: runtimeInstructions(),
   })
 
-  const notify: ChannelNotifier =
-    opts.notify ??
-    (async (notification) => {
-      type ChannelCapableServer = {
-        notification(input: {
-          method: 'notifications/claude/channel'
-          params: ChannelNotification
-        }): Promise<void>
-      }
-      const raw = server.server as unknown as ChannelCapableServer
-      await raw.notification({ method: 'notifications/claude/channel', params: notification })
-    })
+  const selectedIngress =
+    opts.ingress ??
+    (opts.notify
+      ? createCallbackIngressAdapter('legacy-channel-notifier', async (event) => {
+          await opts.notify?.({
+            content: event.content,
+            meta: { ...event.metadata },
+          })
+          return undefined
+        })
+      : opts.ingressFactory?.(server))
+  if (!selectedIngress) {
+    throw new Error('runtime ingress adapter is required')
+  }
+  const ingress: RuntimeIngressAdapter = selectedIngress
+
+  async function notify(notification: ChannelNotification): Promise<void> {
+    const eventId =
+      notification.meta.event_id ??
+      notification.meta.message_id ??
+      `${notification.meta.event_type ?? 'message'}-${runtimeInstanceId}`
+    const event: RuntimeIngressEvent = {
+      eventId,
+      eventType: notification.meta.event_type ?? 'message',
+      source: 'agent-comm',
+      content: notification.content,
+      metadata: notification.meta,
+      occurredAt: notification.meta.ts ?? nowIso(),
+    }
+    const result = await ingress.deliver(event)
+    if (result.status !== 'accepted') {
+      const detail = 'detail' in result ? result.detail : undefined
+      throw new AgentCommError(
+        'HOME_UNREACHABLE',
+        `runtime ingress ${ingress.id} ${result.status}${detail ? `: ${detail}` : ''}`,
+      )
+    }
+  }
+
+  async function respondToEvent(input: {
+    eventId: string
+    eventType: string
+    body: unknown
+    terminal?: boolean | undefined
+    contentType?: string | undefined
+  }): Promise<unknown> {
+    const message = pendingEvents.get(input.eventId)
+    if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${input.eventId}`)
+    const actor = await actorFor(engine, message.channel)
+    const result = await a2a.respond(
+      message,
+      {
+        eventType: input.eventType,
+        body: input.body,
+        mediaType: input.contentType ?? 'application/json',
+        terminal: input.terminal,
+      },
+      actor,
+    )
+    pendingEvents.delete(input.eventId)
+    announcedEvents.delete(input.eventId)
+    return result
+  }
+
+  async function replyToEvent(eventId: string, response: unknown, contentType?: string): Promise<unknown> {
+    const message = pendingEvents.get(eventId)
+    if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${eventId}`)
+    const actor = await actorFor(engine, message.channel)
+    const result = await a2a.reply(message, response, actor, contentType)
+    pendingEvents.delete(eventId)
+    announcedEvents.delete(eventId)
+    return result
+  }
+
+  async function completeEvent(eventId: string): Promise<unknown> {
+    const message = pendingEvents.get(eventId)
+    if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${eventId}`)
+    const actor = await actorFor(engine, message.channel)
+    const result = await a2a.complete(message, actor)
+    pendingEvents.delete(eventId)
+    announcedEvents.delete(eventId)
+    return { ok: true, eventId, ...result }
+  }
 
   server.registerTool(
     'agent_comm',
@@ -763,45 +864,26 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
             if (args.body === undefined) {
               throw new AgentCommError('INVALID_INPUT', 'body is required')
             }
-            const message = pendingEvents.get(eventId)
-            if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${eventId}`)
-            const actor = await actorFor(engine, message.channel)
-            const result = await a2a.respond(
-              message,
-              {
+            return textResult(
+              await respondToEvent({
+                eventId,
                 eventType,
                 body: args.body,
-                mediaType: args.contentType ?? 'application/json',
                 terminal: args.terminal,
-              },
-              actor,
+                contentType: args.contentType,
+              }),
             )
-            pendingEvents.delete(eventId)
-            announcedEvents.delete(eventId)
-            return textResult(result)
           }
           case 'reply': {
             const eventId = requireString(args.eventId, 'eventId')
-            const message = pendingEvents.get(eventId)
-            if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${eventId}`)
             if (args.response === undefined) {
               throw new AgentCommError('INVALID_INPUT', 'response is required')
             }
-            const actor = await actorFor(engine, message.channel)
-            const result = await a2a.reply(message, args.response, actor, args.contentType)
-            pendingEvents.delete(eventId)
-            announcedEvents.delete(eventId)
-            return textResult(result)
+            return textResult(await replyToEvent(eventId, args.response, args.contentType))
           }
           case 'complete': {
             const eventId = requireString(args.eventId, 'eventId')
-            const message = pendingEvents.get(eventId)
-            if (!message) throw new AgentCommError('MESSAGE_NOT_FOUND', `unknown eventId: ${eventId}`)
-            const actor = await actorFor(engine, message.channel)
-            const result = await a2a.complete(message, actor)
-            pendingEvents.delete(eventId)
-            announcedEvents.delete(eventId)
-            return textResult({ ok: true, eventId, ...result })
+            return textResult(await completeEvent(eventId))
           }
           case 'request_input': {
             const eventId = requireString(args.eventId, 'eventId')
@@ -922,7 +1004,8 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
     // 必须覆盖整个 inbox cap；若只读头 100 条，尚未 complete 的旧事件会让新事件永久饥饿。
     const events = await a2a.readInbox(MAX_PENDING_EVENTS, channel)
     for (const { transport: message, event } of events) {
-      if (announcedEvents.has(message.messageId)) continue
+      if (announcedEvents.has(message.messageId) && ingress.capabilities.delivery !== 'poll') continue
+      let ackApplicationAfterIngress = false
       const selector =
         event?.kind === 'message' ? readApplicationEventSelector(event.value.metadata) : undefined
       if (selector && event?.kind === 'message' && applicationRuntime) {
@@ -939,19 +1022,38 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
           sourceRuntimeInstanceId: message.runtimeInstanceId ?? routing?.runtimeInstanceId,
         }
         const processed = await applicationRuntime.process(applicationEvent)
-        if (processed.autoAck) await engine.ack({ messageId: message.messageId })
-        if (processed.status === 'ignored-terminal') continue
+        if (processed.status === 'ignored-terminal') {
+          await engine.ack({ messageId: message.messageId })
+          continue
+        }
+        ackApplicationAfterIngress = processed.autoAck
         if (processed.status === 'reduced') {
           await applicationRuntime.executePendingEffects(
             (effect) => effect.effect.type === 'publish' || effect.effect.type === 'complete',
           )
+          const needsAuthorization = processed.effects.some(
+            (effect) => effect.effect.type === 'request-authorization',
+          )
+          if (needsAuthorization && !ingress.capabilities.interactiveApproval) {
+            if (!announcedEvents.has(message.messageId)) {
+              announcedEvents.add(message.messageId)
+              stderr(
+                `agent-comm application approval pending: channel=${message.channel} event=${message.messageId}\n`,
+              )
+            }
+            await engine.ack({ messageId: message.messageId })
+            continue
+          }
           const needsHarnessDecision = processed.effects.some(
             (effect) =>
               effect.effect.type === 'request-input' ||
               effect.effect.type === 'request-authorization' ||
               effect.effect.type === 'store-artifact',
           )
-          if (processed.consumerStatus === 'handled' && !needsHarnessDecision) continue
+          if (processed.consumerStatus === 'handled' && !needsHarnessDecision && !processed.duplicate) {
+            await engine.ack({ messageId: message.messageId })
+            continue
+          }
         }
       }
       if (shouldAutoAckSilently(event)) {
@@ -959,6 +1061,9 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
         continue
       }
       const eventType = inboundEventType(event)
+      // Register before calling ingress: webhook/process adapters may handle and
+      // complete the event synchronously inside deliver().
+      for (const evicted of addPendingEvent(pendingEvents, message)) announcedEvents.delete(evicted)
       await notify({
         content: formatChannelNotification(eventType, message, event),
         meta: {
@@ -980,9 +1085,12 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
       })
       // Channel notification 没有处理回执。保留在 inbox，直到 Claude 调 reply/complete；
       // 本进程内用 announcedEvents 去重，若会话崩溃则下次启动重新投递(at-least-once)。
-      for (const evicted of addPendingEvent(pendingEvents, message)) announcedEvents.delete(evicted)
-      announcedEvents.add(message.messageId)
-      if (shouldAutoAckAfterNotification(event)) {
+      // Pull adapters own visibility leases, so the pump keeps offering the
+      // pending event. The adapter deduplicates until ACK/NACK/lease expiry.
+      if (ingress.capabilities.delivery !== 'poll' && pendingEvents.has(message.messageId)) {
+        announcedEvents.add(message.messageId)
+      }
+      if (ackApplicationAfterIngress || shouldAutoAckAfterNotification(event)) {
         await engine.ack({ messageId: message.messageId })
         pendingEvents.delete(message.messageId)
       }
@@ -1013,7 +1121,18 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
 
   const bridge: ChannelBridge = {
     server,
+    ingress,
     runtimeInstanceId,
+    async activate(channel) {
+      const actor = await actorFor(engine, channel)
+      await activateChannel(channel, actor)
+    },
+    activeChannels() {
+      return [...activeChannels]
+    },
+    respond: respondToEvent,
+    reply: replyToEvent,
+    complete: completeEvent,
     async pollOnce() {
       if (polling) return
       polling = true
@@ -1034,6 +1153,11 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
     start() {
       if (running) return
       running = true
+      void Promise.resolve(ingress.start?.({ runtimeInstanceId })).catch((error) => {
+        stderr(
+          `agent-comm ingress ${ingress.id}: ${error instanceof Error ? error.message : String(error)}\n`,
+        )
+      })
       const tick = async (): Promise<void> => {
         if (!running) return
         await bridge.pollOnce()
@@ -1045,6 +1169,11 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
       running = false
       if (timer) clearTimeout(timer)
       timer = undefined
+      void Promise.resolve(ingress.stop?.()).catch((error) => {
+        stderr(
+          `agent-comm ingress ${ingress.id}: ${error instanceof Error ? error.message : String(error)}\n`,
+        )
+      })
     },
   }
 
@@ -1139,6 +1268,7 @@ export async function runChannel(profile: ProfilePaths, opts: RunChannelOptions 
       ),
     })
   }
+  const { createClaudeCodeChannelIngress } = await import('@agent-comm/harness-claude-code')
   const bridge = createChannelBridge(engine, {
     ...opts,
     defaultHome: opts.defaultHome ?? resolveChannelRelayUrl(),
@@ -1149,6 +1279,10 @@ export async function runChannel(profile: ProfilePaths, opts: RunChannelOptions 
       process.env.AGENT_COMM_RUNTIME_INSTANCE_ID,
     applicationRuntime,
     taskAuthorizations: opts.taskAuthorizations ?? applicationStoreHandle?.taskAuthorizations,
+    ingressFactory:
+      opts.ingress || opts.notify || opts.ingressFactory
+        ? opts.ingressFactory
+        : (server) => createClaudeCodeChannelIngress(server.server),
   })
 
   let closed = false

@@ -161,4 +161,52 @@ describe('ApplicationRuntime', () => {
     })
     expect(handle).toHaveBeenCalledTimes(1)
   })
+
+  it('lets the application protocol translate a harness outcome exactly once', async () => {
+    const store = new InMemoryApplicationRuntimeStore()
+    const consumers = new ApplicationConsumerRegistry()
+    const resume = vi.fn((_source, outcome) => ({
+      status: 'handled' as const,
+      state: { result: outcome.result },
+      taskState: 'completed' as const,
+      effects: [
+        {
+          type: 'publish' as const,
+          to: 'manager',
+          selector: { uri: extensionUri, version: '1.0.0', eventType: 'task.completed' },
+          body: { taskId: 'task-1', result: outcome.result },
+        },
+      ],
+    }))
+    consumers.register({
+      id: 'resumable',
+      supports: [{ uri: extensionUri, version: '1.0.0' }],
+      handle: () => ({
+        status: 'handled',
+        taskState: 'input-required',
+        state: { waiting: true },
+        effects: [{ type: 'request-input', prompt: 'do the work' }],
+      }),
+      resume,
+    })
+    const runtime = new ApplicationRuntime({
+      runtimeInstanceId: 'r-resume',
+      profilePrincipal: 'node-worker',
+      registry: consumers,
+      store,
+    })
+    await runtime.process(event('m-resume'))
+
+    const first = await runtime.resume('m-resume', { status: 'completed', result: 'done' })
+    const duplicate = await runtime.resume('m-resume', { status: 'completed', result: 'ignored' })
+
+    expect(first).toMatchObject({ status: 'reduced', duplicate: false, taskState: 'completed' })
+    expect(duplicate).toBeUndefined()
+    expect(resume).toHaveBeenCalledOnce()
+    expect(store.effects.get('effect:m-resume:0')?.status).toBe('applied')
+    expect(store.effects.get('effect:m-resume:harness-outcome:0')?.effect).toMatchObject({
+      type: 'publish',
+      body: { result: 'done' },
+    })
+  })
 })

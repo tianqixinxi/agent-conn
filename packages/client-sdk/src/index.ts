@@ -118,12 +118,29 @@ export interface ApplicationConsumerResult {
   taskState?: import('./runtime.js').ApplicationTaskState | undefined
 }
 
+export interface ApplicationHarnessOutcome {
+  status: 'completed' | 'failed'
+  result?: unknown
+  error?: string | undefined
+}
+
 export interface ApplicationConsumer {
   id: string
   version?: string | undefined
   supports: readonly SupportedApplicationExtension[]
   handle(
     event: VerifiedApplicationEvent,
+    context: ApplicationConsumerContext,
+  ): Promise<ApplicationConsumerResult> | ApplicationConsumerResult
+  /**
+   * Optional continuation owned by the application protocol. It translates a
+   * harness result into protocol-native effects (for example
+   * `task.completed` or `response.created`) without teaching transport code
+   * any workflow semantics.
+   */
+  resume?(
+    source: VerifiedApplicationEvent,
+    outcome: ApplicationHarnessOutcome,
     context: ApplicationConsumerContext,
   ): Promise<ApplicationConsumerResult> | ApplicationConsumerResult
 }
@@ -143,6 +160,7 @@ export type ApplicationDispatchResult =
 interface RegisteredConsumer {
   consumer: ApplicationConsumer
   supports: SupportedApplicationExtension[]
+  channels?: ReadonlySet<string> | undefined
 }
 
 export interface ResolvedApplicationConsumer {
@@ -153,24 +171,44 @@ export interface ResolvedApplicationConsumer {
 export class ApplicationConsumerRegistry {
   readonly #consumers = new Map<string, RegisteredConsumer>()
 
-  register(consumer: ApplicationConsumer): void {
-    if (this.#consumers.has(consumer.id)) {
-      throw new Error(`application consumer already registered: ${consumer.id}`)
+  register(consumer: ApplicationConsumer, options: { channels?: readonly string[] } = {}): void {
+    const channels = options.channels ? [...new Set(options.channels)].sort() : undefined
+    const registrationKey = `${consumer.id}\u0000${channels?.join(',') ?? '*'}`
+    if (this.#consumers.has(registrationKey)) {
+      throw new Error(
+        `application consumer already registered: ${consumer.id} for ${channels?.join(',') ?? '*'}`,
+      )
     }
     const supports = consumer.supports.map((item) => SupportedApplicationExtensionSchema.parse(item))
-    this.#consumers.set(consumer.id, { consumer, supports })
+    this.#consumers.set(registrationKey, {
+      consumer,
+      supports,
+      ...(channels ? { channels: new Set(channels) } : {}),
+    })
   }
 
   unregister(consumerId: string): boolean {
-    return this.#consumers.delete(consumerId)
+    let changed = false
+    for (const [key, registration] of this.#consumers) {
+      if (registration.consumer.id !== consumerId) continue
+      this.#consumers.delete(key)
+      changed = true
+    }
+    return changed
   }
 
   supportedExtensions(): SupportedApplicationExtension[] {
     return [...this.#consumers.values()].flatMap(({ supports }) => supports.map((item) => ({ ...item })))
   }
 
-  resolve(selector: ApplicationEventSelector): ResolvedApplicationConsumer | undefined {
-    for (const { consumer, supports } of this.#consumers.values()) {
+  resolve(selector: ApplicationEventSelector, channelId?: string): ResolvedApplicationConsumer | undefined {
+    const registrations = [...this.#consumers.values()].sort((left, right) => {
+      const score = (channels?: ReadonlySet<string>): number =>
+        channels?.has(channelId ?? '') ? 2 : channels?.has('*') ? 1 : 0
+      return score(right.channels) - score(left.channels)
+    })
+    for (const { consumer, supports, channels } of registrations) {
+      if (channels && (!channelId || (!channels.has(channelId) && !channels.has('*')))) continue
       const negotiated = negotiateApplicationExtension(supports, [
         { uri: selector.uri, version: selector.version },
       ])
@@ -183,7 +221,7 @@ export class ApplicationConsumerRegistry {
     event: VerifiedApplicationEvent,
     context: ApplicationConsumerContext,
   ): Promise<ApplicationDispatchResult> {
-    const resolved = this.resolve(event.selector)
+    const resolved = this.resolve(event.selector, event.channelId)
     if (resolved) {
       const result = await resolved.consumer.handle(event, context)
       return {

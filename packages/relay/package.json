@@ -10,6 +10,7 @@
   },
   "type": "module",
   "dependencies": {
+    "@agent-comm/application-spec": "workspace:*",
     "@agent-comm/core": "workspace:*",
     "@agent-comm/gateway-a2a": "workspace:*",
     "@hono/node-server": "^2.0.10",

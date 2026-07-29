@@ -8,6 +8,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "agent-comm": "workspace:*"
+    "@agent-comm/runtime-ingress": "workspace:*"
   }
 }

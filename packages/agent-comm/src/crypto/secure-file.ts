@@ -29,6 +29,9 @@ function writeTemporaryPrivateFile(targetPath: string, data: string): string {
   mkdirSync(parent, { recursive: true, mode: 0o700 })
   const tempPath = temporaryPath(targetPath)
   // O_EXCL and O_NOFOLLOW prevent symlink replacement at the final filesystem boundary.
+  // The file is created beside the destination in its private 0700 profile directory, not in a
+  // shared OS temporary directory.
+  // codeql[js/insecure-temporary-file]
   // codeql[js/path-injection]
   const fd = openSync(
     tempPath,
@@ -48,6 +51,8 @@ function writeTemporaryPrivateFile(targetPath: string, data: string): string {
 export function readPrivateFile(path: string): string {
   // O_NOFOLLOW prevents an attacker from replacing a key with a symlink between validation and use.
   // Profile directories are private (0700); this operator-owned path is validated by config.ts.
+  // This opens an existing profile file; it does not create a file in the OS temporary directory.
+  // codeql[js/insecure-temporary-file]
   // codeql[js/path-injection]
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {

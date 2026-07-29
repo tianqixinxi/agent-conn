@@ -8,6 +8,8 @@ import {
   ApplicationRuntime,
   InMemoryApplicationRuntimeStore,
 } from '@agent-comm/client-sdk'
+import { createClaudeCodeChannelIngress } from '@agent-comm/harness-claude-code'
+import { PollingIngressAdapter } from '@agent-comm/ingress-polling'
 import type { AuthorizationReceipt, Message, TaskAuthorization } from '@agent-comm/protocol'
 import {
   A2A_MEDIA_TYPE,
@@ -20,12 +22,14 @@ import {
   nowIso,
   tryDecodeA2AEvent,
 } from '@agent-comm/protocol'
+import { createCallbackIngressAdapter } from '@agent-comm/runtime-ingress'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { NotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod/v4'
 import {
+  type ChannelBridge,
   type ChannelBridgeOptions,
   type ChannelNotification,
   createChannelApplicationEffectExecutor,
@@ -93,7 +97,9 @@ async function connectBridge(
 ) {
   const bridge = createChannelBridge(engine, {
     ...options,
-    notify: async (notification) => void notifications.push(notification),
+    ...(options.ingress
+      ? {}
+      : { notify: async (notification: ChannelNotification) => void notifications.push(notification) }),
     stderr: () => {},
   })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -521,6 +527,65 @@ describe('Claude Code channel bridge', () => {
     expect(sends).toHaveLength(2)
   })
 
+  it('keeps an application event unacked until deferred runtime ingress accepts it', async () => {
+    const original = createA2AMessage({
+      messageId: 'a2a-deferred-application',
+      role: 'user',
+      payload: { goal: 'review README' },
+      contextId: 'ctx-deferred-application',
+      taskId: 'task-deferred-application',
+      metadata: withApplicationEventSelector(undefined, {
+        uri: REPOSITORY_EXTENSION,
+        version: '1.0.0',
+        eventType: 'work.requested',
+      }),
+    })
+    const inbound = message({
+      messageId: 'transport-deferred-application',
+      contentType: A2A_MEDIA_TYPE,
+      payload: encodeA2AEvent({ kind: 'message', value: original }),
+    })
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    const applicationRuntime = new ApplicationRuntime({
+      runtimeInstanceId: 'r-deferred-runtime-001',
+      profilePrincipal: 'node-bob',
+      registry: new ApplicationConsumerRegistry(),
+      store: new InMemoryApplicationRuntimeStore(),
+    })
+    let attempts = 0
+    const ingress: NonNullable<ChannelBridgeOptions['ingress']> = {
+      id: 'deferred-then-accepted',
+      capabilities: {
+        delivery: 'process',
+        wake: 'process',
+        background: true,
+        interactiveApproval: false,
+        streaming: false,
+        durability: 'upstream',
+      },
+      async deliver() {
+        attempts += 1
+        return attempts === 1 ? { status: 'deferred', detail: 'runtime busy' } : { status: 'accepted' }
+      },
+    }
+    const { bridge, client } = await connectBridge(engine, [], { applicationRuntime, ingress })
+    await activate(client)
+
+    await bridge.pollOnce()
+    expect(attempts).toBe(1)
+    expect(engine.calls.some((call) => call.method === 'ack')).toBe(false)
+
+    await bridge.pollOnce()
+    expect(attempts).toBe(2)
+    expect(engine.calls.find((call) => call.method === 'ack')?.args[0]).toEqual({
+      messageId: inbound.messageId,
+    })
+    applicationRuntime.close()
+  })
+
   it('executes a consumer publish effect through the real Channel adapter after state commit', async () => {
     const original = createA2AMessage({
       messageId: 'a2a-effect-source',
@@ -613,7 +678,10 @@ describe('Claude Code channel bridge', () => {
         inbox: [inbound],
         memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
       }),
-      { stderr: () => {} },
+      {
+        ingressFactory: (server) => createClaudeCodeChannelIngress(server.server),
+        stderr: () => {},
+      },
     )
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'channel-host-test', version: '0.0.0' }, { capabilities: {} })
@@ -637,6 +705,46 @@ describe('Claude Code channel bridge', () => {
     expect(notifications[0]?.content).toContain('review the change')
     expect(notifications[0]?.content).toContain(`Event ID: ${inbound.messageId}`)
     expect(notifications[0]?.content.trimStart().startsWith('{')).toBe(false)
+  })
+
+  it('registers pending work before a non-MCP ingress completes it synchronously', async () => {
+    const inbound = message({ messageId: 'm-sync-complete' })
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    let bridge: ChannelBridge
+    const ingress = createCallbackIngressAdapter('sync-runtime', async (event) => {
+      await bridge.complete(event.eventId)
+      return { status: 'accepted' }
+    })
+    bridge = createChannelBridge(engine, { ingress, stderr: () => {} })
+    await bridge.activate('duet')
+
+    await bridge.pollOnce()
+
+    expect(engine.calls.some((call) => call.method === 'send')).toBe(true)
+    expect(engine.calls.some((call) => call.method === 'ack')).toBe(true)
+  })
+
+  it('reoffers unfinished pull work after the polling adapter acknowledges its lease', async () => {
+    const inbound = message({ messageId: 'm-pull-redelivery' })
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    const ingress = new PollingIngressAdapter()
+    const bridge = createChannelBridge(engine, { ingress, stderr: () => {} })
+    await bridge.activate('duet')
+    await bridge.pollOnce()
+
+    const first = ingress.poll({ limit: 1 })[0]
+    expect(first?.event.eventId).toBe(inbound.messageId)
+    expect(ingress.ack(inbound.messageId)).toBe(true)
+    expect(ingress.size()).toBe(0)
+
+    await bridge.pollOnce()
+    expect(ingress.size()).toBe(1)
   })
 
   it('pushes an inbound message but keeps it unconsumed until Claude reports completion', async () => {

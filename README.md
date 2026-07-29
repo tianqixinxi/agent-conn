@@ -20,11 +20,21 @@ packages/delivery             TransportBinding 与发现契约
 packages/a2a-binding          官方 A2A 1.0 codec 和 AgentCard binding
 packages/application-spec     社区扩展 manifest、版本协商、fixture contract
 packages/client-sdk           consumer、事务 reducer、effect journal、conformance
-packages/harness-claude-code  Claude Code Channel 公共入口
+packages/application-catalog  协议 registry、安装、信任、频道绑定与更新
+packages/runtime-ingress      Harness-neutral ingress contract 与 dispatcher
+packages/runtime-supervisor   持久 runtime registry、heartbeat 与 adapter routing
+packages/harness-claude-code  Claude Code Native Channel adapter
+packages/harness-codex        Codex App Server 与 Codex Exec adapters
+packages/ingress-polling      无原生 push Harness 的 lease-based pull adapter
+packages/ingress-webhook      HTTP push + HMAC adapter
+packages/ingress-process      一次性 agent run / process injection adapter
 packages/gateway-a2a          可选 trusted plaintext A2A ingress
+packages/benchmark            分层 suite、runner、阈值报告与基线比较
 packages/agent-comm           SQLite/transport 实现、CLI 与 composition root
 packages/relay                签名 HTTP relay、公开频道与浏览器页面
 applications/manager-workers  独立 reference application
+applications/request-response 最小 request/response reference application
+benchmarks                    可复现的跨层 benchmark suites
 packages/protocol             0.x 兼容 facade
 plugin                        Claude Code marketplace 自包含产物
 ```
@@ -38,7 +48,22 @@ curl -fsSL https://connect.meee1.com/install.sh | bash
 $HOME/.local/bin/agentcomm open
 ```
 
-`agentcomm open` 会在终端中读取完整邀请，按需通过 Claude Code 自己的 plugin manager 持久安装插件，然后用正确的 Channel 参数启动一个新 Claude 会话。第一次安装后不需要每次 update，也不需要 `/reload-plugins`；只有显式运行 `agentcomm update` 才会更新启动器和插件。Claude 在兑换邀请前仍会要求一次独立的频道信任确认。网页安装引导与公开频道目录位于 <https://connect.meee1.com>。
+安装器同时安装轻量 launcher 与 harness-neutral runtime CLI。`agentcomm open` 会在终端中读取完整邀请，按需通过 Claude Code 自己的 plugin manager 持久安装插件，然后用正确的 Channel 参数启动一个新 Claude 会话。第一次安装后不需要每次 update，也不需要 `/reload-plugins`；只有显式运行 `agentcomm update` 才会更新 launcher、runtime 和已安装插件。Claude 在兑换邀请前仍会要求一次独立的频道信任确认。网页安装引导、社区协议索引与公开频道目录位于 <https://connect.meee1.com>。
+
+没有 Claude Native Channel 的 Runtime 也使用同一个安装结果：
+
+```bash
+agentcomm app search
+agentcomm app install https://connect.meee1.com/api/public/applications/request-response/1.0.0/manifest
+agentcomm app enable https://agentcomm.dev/community/request-response/v1 --channel <channelId>
+agentcomm runtime add worker --channel <channelId> --harness codex-exec \
+  --runtime-profile worker --trusted-auto-resume
+agentcomm daemon install
+```
+
+`daemon install` 使用 launchd（macOS）或 systemd user service（Linux）常驻，只恢复
+`--trusted-auto-resume` 注册中明确列出的 opaque channelId。授权类 application effect
+不会进入无人值守模型；可用 `agentcomm app pending` 查看待输入/审批 context。
 
 邀请页的快速方式会把完整邀请放进一条可复制命令；这最顺滑，但私有频道的 `#k` 也会进入 shell history。共用机器请使用一次性邀请，或先执行上面的安装命令，再运行 `$HOME/.local/bin/agentcomm open` 并在提示后粘贴邀请。
 
@@ -57,12 +82,21 @@ pnpm agent-comm -- --help          # 跑节点 CLI(tsx,仅限仓库目录内)
 pnpm relay                          # 跑中继(默认 :8787)
 pnpm build:cli                     # 打包免加载器的 CLI 到 packages/agent-comm/dist
 pnpm build:plugin                  # 生成可发布的自包含 Claude Code 插件
+pnpm benchmark:p0                  # 校验五层 benchmark suite
 bin/ac --help                      # 打包产物的入口(任意目录可用;需先 build:cli)
 ```
 
 约定:Node ≥ 22.12(用 `node:sqlite`,零原生依赖);ESM + NodeNext(包内相对 import 带 `.js` 后缀);Zod 4;严格模式,`pnpm typecheck`/`test`/`lint` 三绿为完成线(DESIGN §5)。
 
-## Claude Code Channel
+## Runtime Ingress 与 Claude Code Channel
+
+AgentComm 的逻辑频道和 Claude Code 的 `--channels` 已经解耦。Relay 到达的消息先进入本地
+durable inbox，再经过统一 `RuntimeIngressAdapter` 投递到具体 Agent Harness。当前实现包括
+Claude Native Channel、Claude Print、Codex App Server、Codex Exec、lease-based polling、
+HMAC webhook 和无 shell 的 process spawn。
+不支持原生 Channel 的 Harness 可以主动 poll、暴露 webhook，或者由 AgentComm 启动一次性
+agent run，不需要修改 Core、Delivery 或 Application Protocol。接口、状态语义和接入示例见
+[Runtime Ingress Adapters](./docs/runtime-ingress.md)。
 
 `channel` 入口把 AgentComm 变成事件驱动的 Claude Code Channel：A2A Message/Task 到达后会直接唤醒正在运行的 Claude，由 Claude 在已有权限内自动处理；只有 A2A `AUTH_REQUIRED`、Claude Code 自己的权限提示或频道 `intercept` 治理需要人介入。
 

@@ -269,13 +269,29 @@ export function createManagerWorkersConsumer(options: ManagerWorkersConsumerOpti
                 { taskId: assigned.taskId, progress: 50, note: 'work started' },
                 context.contextId,
               ),
-              publish(
-                manager,
-                'task.completed',
-                { taskId: assigned.taskId, result: options.autoResult ?? { ok: true } },
-                context.contextId,
-              ),
             )
+            if (options.autoResult === undefined) {
+              effects.push({
+                type: 'request-input',
+                prompt: assigned.goal,
+                schema: { taskId: assigned.taskId, manager },
+              })
+              return {
+                status: 'handled',
+                state,
+                taskState: 'input-required',
+                effects,
+              }
+            } else {
+              effects.push(
+                publish(
+                  manager,
+                  'task.completed',
+                  { taskId: assigned.taskId, result: options.autoResult },
+                  context.contextId,
+                ),
+              )
+            }
           }
           break
         }
@@ -362,6 +378,52 @@ export function createManagerWorkersConsumer(options: ManagerWorkersConsumerOpti
         }
       }
       return { status: 'handled', state, taskState: 'active', effects }
+    },
+    resume(source, outcome, context): ApplicationConsumerResult {
+      if (options.role !== 'worker' || source.selector.eventType !== 'task.assigned') {
+        return { status: 'ignored', effects: [] }
+      }
+      const assigned = TaskAssignedSchema.parse(source.body)
+      if (assigned.worker !== options.alias) return { status: 'ignored', effects: [] }
+      const state: ManagerWorkersState = structuredClone(
+        (context.state as ManagerWorkersState | undefined) ?? initialState(),
+      )
+      const task = state.tasks[assigned.taskId] ?? {
+        taskId: assigned.taskId,
+        goal: assigned.goal,
+        status: 'in-progress' as const,
+        assignedTo: assigned.worker,
+      }
+      state.tasks[assigned.taskId] = task
+      const manager = options.managerAlias ?? state.manager ?? source.from
+      if (outcome.status === 'failed') {
+        task.status = 'failed'
+        task.error = outcome.error ?? 'runtime failed'
+        return {
+          status: 'handled',
+          state,
+          taskState: 'failed',
+          effects: [
+            publish(manager, 'task.failed', { taskId: task.taskId, error: task.error }, context.contextId),
+          ],
+        }
+      }
+      task.status = 'completed'
+      task.progress = 100
+      task.result = outcome.result
+      return {
+        status: 'handled',
+        state,
+        taskState: 'active',
+        effects: [
+          publish(
+            manager,
+            'task.completed',
+            { taskId: task.taskId, result: outcome.result },
+            context.contextId,
+          ),
+        ],
+      }
     },
   }
 }

@@ -47,4 +47,32 @@ describe('foundation package boundaries', () => {
     expect(protocol).toContain("export * from '@agent-comm/a2a-binding'")
     expect(readdirSync(join(root, 'packages/protocol/src')).sort()).toEqual(['index.ts'])
   })
+
+  it('keeps runtime ingress and its adapters independent from communication internals', () => {
+    const contract = source(join(root, 'packages/runtime-ingress/src'))
+    for (const forbidden of [
+      '@agent-comm/core',
+      '@agent-comm/delivery',
+      '@agent-comm/a2a-binding',
+      '@agent-comm/client-sdk',
+      '@modelcontextprotocol/sdk',
+      'agent-comm/channel',
+    ]) {
+      expect(contract).not.toContain(forbidden)
+    }
+
+    for (const packageName of [
+      'harness-claude-code',
+      'ingress-polling',
+      'ingress-process',
+      'ingress-webhook',
+    ]) {
+      const adapter = source(join(root, `packages/${packageName}/src`))
+      expect(adapter).toContain('@agent-comm/runtime-ingress')
+      expect(adapter).not.toContain('@agent-comm/core')
+      expect(adapter).not.toContain('@agent-comm/delivery')
+      expect(adapter).not.toContain('@agent-comm/a2a-binding')
+      expect(adapter).not.toContain('agent-comm/channel')
+    }
+  })
 })

@@ -46,7 +46,6 @@ USER agentcomm
 ENV NODE_ENV=production \
     PORT=8787 \
     RELAY_DB=/var/lib/agent-comm/relay.db \
-    AGENTCOMM_CLI_ASSET_DIR=/app \
     AGENT_COMM_A2A_INGRESS=0
 
 EXPOSE 8787

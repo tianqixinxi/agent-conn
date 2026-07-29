@@ -70,24 +70,30 @@ describe('runtime daemon service', () => {
     const profile = resolveProfile({ profile: 'worker', rootDir: join(home, '.agent-comm') })
     const execute = vi.fn(() => ({ status: 0 }))
     const previousEntry = process.argv[1]
+    const previousHome = process.env.HOME
     process.argv[1] = cliPath
+    process.env.HOME = home
     try {
       const installed = installDaemonService({
         profile,
         platform: 'darwin',
-        homeDir: home,
         execute,
       })
       expect(installed.started).toBe(true)
       expect(execute).toHaveBeenCalledWith(
         expect.objectContaining({ command: 'launchctl', args: expect.arrayContaining(['bootstrap']) }),
       )
-      expect(uninstallDaemonService({ platform: 'darwin', homeDir: home, execute }).removed).toBe(true)
+      expect(uninstallDaemonService({ platform: 'darwin', execute }).removed).toBe(true)
     } finally {
       if (previousEntry === undefined) {
         delete process.argv[1]
       } else {
         process.argv[1] = previousEntry
+      }
+      if (previousHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = previousHome
       }
     }
   })

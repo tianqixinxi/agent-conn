@@ -123,7 +123,6 @@ WantedBy=default.target
 export interface InstallDaemonServiceOptions {
   profile: ProfilePaths
   platform?: NodeJS.Platform | undefined
-  homeDir?: string | undefined
   start?: boolean | undefined
   execute?: DaemonServiceExecutor | undefined
 }
@@ -140,9 +139,7 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
   const cliPath = resolve(process.argv[1] ?? '')
   if (!existsSync(cliPath)) throw new Error(`AgentComm CLI entry does not exist: ${cliPath}`)
   const nodePath = resolve(process.execPath)
-  // homeDir is an explicit local operator override. Resolving it once and appending only fixed
-  // service paths prevents a runtime/profile value from choosing the destination.
-  const home = resolve(options.homeDir ?? homedir())
+  const home = resolve(homedir())
   const execute = options.execute ?? defaultExecutor
   const start = options.start ?? true
   let path: string
@@ -156,7 +153,7 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   // path is a fixed suffix below the resolved local home directory.
-  // lgtm[js/path-injection]
+  // codeql[js/path-injection]
   writeFileSync(path, content, { mode: 0o600 })
   if (!start) return { platform, path, started: false }
   const commands: DaemonServiceCommand[] =
@@ -188,17 +185,13 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
 }
 
 export function uninstallDaemonService(
-  options: {
-    platform?: NodeJS.Platform | undefined
-    homeDir?: string | undefined
-    execute?: DaemonServiceExecutor | undefined
-  } = {},
+  options: { platform?: NodeJS.Platform | undefined; execute?: DaemonServiceExecutor | undefined } = {},
 ): { removed: boolean; path: string } {
   const platform = options.platform ?? process.platform
   if (platform !== 'darwin' && platform !== 'linux') {
     throw new Error(`daemon service installation is not supported on ${platform}`)
   }
-  const home = resolve(options.homeDir ?? homedir())
+  const home = resolve(homedir())
   const execute = options.execute ?? defaultExecutor
   const path =
     platform === 'darwin'
@@ -215,7 +208,7 @@ export function uninstallDaemonService(
   }
   const removed = existsSync(path)
   // path is a fixed suffix below the resolved local home directory.
-  // lgtm[js/path-injection]
+  // codeql[js/path-injection]
   rmSync(path, { force: true })
   return { removed, path }
 }

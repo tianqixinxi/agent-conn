@@ -56,12 +56,12 @@ const RuntimeRegistryStateSchema = z.object({
 function atomicWrite(path: string, value: unknown): void {
   // FileRuntimeRegistry resolves a local operator-owned registry path before this helper is used.
   // Runtime registrations are serialized as data and cannot influence this path.
-  // lgtm[js/path-injection]
+  // codeql[js/path-injection]
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = `${path}.${process.pid}.tmp`
-  // lgtm[js/path-injection]
+  // codeql[js/path-injection]
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-  // lgtm[js/path-injection]
+  // codeql[js/path-injection]
   renameSync(temporary, path)
 }
 
@@ -74,11 +74,11 @@ export class FileRuntimeRegistry {
 
   #read(): z.infer<typeof RuntimeRegistryStateSchema> {
     // this.path is a resolved local configuration path, never a channel event or remote message.
-    // lgtm[js/path-injection]
+    // codeql[js/path-injection]
     if (!existsSync(this.path)) {
       return { schemaVersion: 1, registrations: [], statuses: [] }
     }
-    // lgtm[js/path-injection]
+    // codeql[js/path-injection]
     return RuntimeRegistryStateSchema.parse(JSON.parse(readFileSync(this.path, 'utf8')))
   }
 

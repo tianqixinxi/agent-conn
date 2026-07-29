@@ -228,7 +228,7 @@ export function createProcessBenchmarkExecutor(input: AuthorizedProcessBenchmark
     new Promise<BenchmarkExecution>((resolve, reject) => {
       // command is an absolute executable resolved above after an explicit local authorization;
       // suite/event data is passed over stdin and never interpolated into command or argv.
-      // lgtm[js/command-line-injection]
+      // codeql[js/command-line-injection]
       const child = spawn(command, input.args ?? [], {
         cwd,
         env: {

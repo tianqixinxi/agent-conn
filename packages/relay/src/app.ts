@@ -214,9 +214,9 @@ export function createApp(deps: RelayDeps): Hono {
     const assetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
     const assetPath = join(assetRoot, asset.filename)
     // asset.filename comes from the closed constant map above; assetRoot is a local operator setting.
-    // lgtm[js/path-injection]
+    // codeql[js/path-injection]
     if (!existsSync(assetPath)) return c.notFound()
-    // lgtm[js/path-injection]
+    // codeql[js/path-injection]
     return c.body(readFileSync(assetPath), 200, {
       'content-type': asset.contentType,
       'cache-control': 'public, max-age=300',

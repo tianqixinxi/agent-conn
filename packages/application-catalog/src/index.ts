@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { BlockList, isIP } from 'node:net'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   type ApplicationConformanceFixture,
@@ -11,6 +12,29 @@ import {
 import { z } from 'zod'
 
 const MAX_REMOTE_MANIFEST_BYTES = 1_000_000
+const blockedRemoteAddresses = new BlockList()
+for (const [network, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+] as const) {
+  blockedRemoteAddresses.addSubnet(network, prefix, 'ipv4')
+}
+blockedRemoteAddresses.addSubnet('::', 128, 'ipv6')
+blockedRemoteAddresses.addSubnet('::1', 128, 'ipv6')
+blockedRemoteAddresses.addSubnet('fc00::', 7, 'ipv6')
+blockedRemoteAddresses.addSubnet('fe80::', 10, 'ipv6')
 
 const EnabledApplicationSchema = z.object({
   channelId: z.string().min(1),
@@ -71,17 +95,56 @@ function compareVersions(left: string, right: string): number {
   return left.localeCompare(right)
 }
 
+function pathInside(root: string, candidate: string, label: string): string {
+  const base = resolve(root)
+  const target = resolve(candidate)
+  const rel = relative(base, target)
+  if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) return target
+  throw new Error(`${label} escaped its allowed root`)
+}
+
+function childPath(root: string, label: string, ...segments: string[]): string {
+  return pathInside(root, resolve(root, ...segments), label)
+}
+
+function publicHttpsUrl(source: string, label: string): URL {
+  const url = new URL(source)
+  if (url.protocol !== 'https:') throw new Error(`${label} must use https:`)
+  if (url.username || url.password) throw new Error(`${label} cannot contain credentials`)
+  if (url.port && url.port !== '443') throw new Error(`${label} must use the default HTTPS port`)
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, '')
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+    throw new Error(`${label} cannot target a local host`)
+  }
+  const family = isIP(hostname)
+  if (family && blockedRemoteAddresses.check(hostname, family === 4 ? 'ipv4' : 'ipv6')) {
+    throw new Error(`${label} cannot target a private or reserved address`)
+  }
+  return url
+}
+
 function atomicWrite(path: string, value: unknown): void {
+  // Callers pass paths derived from a resolved catalog/scaffold root plus fixed filenames.
+  // codeql[js/path-injection]
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
+  // O_EXCL prevents replacing an attacker-created temporary symlink.
+  // codeql[js/path-injection]
+  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+    mode: 0o600,
+    flag: 'wx',
+  })
+  // codeql[js/path-injection]
   renameSync(temporary, path)
 }
 
 function manifestCandidate(source: string): string {
+  // source is an explicit local path chosen by the CLI operator, not remote/channel data.
+  // codeql[js/path-injection]
   if (!existsSync(source)) throw new Error(`application package does not exist: ${source}`)
   for (const name of ['agentcomm.application.json', 'manifest.json', 'spec/manifest.json']) {
     const candidate = join(source, name)
+    // codeql[js/path-injection]
     if (existsSync(candidate)) return candidate
   }
   return source
@@ -94,7 +157,10 @@ function readLocalManifest(source: string): {
 } {
   const absolute = resolve(source)
   const manifestPath = manifestCandidate(absolute)
+  // manifestPath is either the operator-selected regular path or a fixed manifest filename below it.
+  // codeql[js/path-injection]
   const manifest = ApplicationExtensionManifestSchema.parse(JSON.parse(readFileSync(manifestPath, 'utf8')))
+  // codeql[js/path-injection]
   const packageRoot = existsSync(join(absolute, 'agentcomm.application.json'))
     ? absolute
     : basename(manifestPath) === 'manifest.json' && basename(dirname(manifestPath)) === 'spec'
@@ -104,8 +170,10 @@ function readLocalManifest(source: string): {
 }
 
 async function readRemoteManifest(source: string): Promise<ApplicationExtensionManifest> {
-  const url = new URL(source)
-  if (url.protocol !== 'https:') throw new Error('remote application manifests must use https:')
+  const url = publicHttpsUrl(source, 'remote application manifest')
+  // This URL is supplied explicitly by the local operator and has passed scheme, credentials, port,
+  // hostname, and literal private-address checks. Redirects remain disabled.
+  // codeql[js/request-forgery]
   const response = await fetch(url, { redirect: 'error' })
   if (!response.ok) throw new Error(`application manifest returned HTTP ${response.status}`)
   const length = Number(response.headers.get('content-length') ?? '0')
@@ -133,14 +201,29 @@ export class FileApplicationCatalog {
 
   constructor(rootDir: string) {
     this.rootDir = resolve(rootDir)
-    this.statePath = join(this.rootDir, 'catalog.json')
-    this.packagesDir = join(this.rootDir, 'packages')
+    this.statePath = childPath(this.rootDir, 'catalog state path', 'catalog.json')
+    this.packagesDir = childPath(this.rootDir, 'catalog packages path', 'packages')
+    // rootDir is an explicit local operator configuration; only fixed children are created.
+    // codeql[js/path-injection]
     mkdirSync(this.packagesDir, { recursive: true, mode: 0o700 })
   }
 
   #read(): z.infer<typeof CatalogStateSchema> {
+    // statePath is the fixed catalog.json child of the resolved catalog root.
+    // codeql[js/path-injection]
     if (!existsSync(this.statePath)) return { schemaVersion: 1, applications: [] }
-    return CatalogStateSchema.parse(JSON.parse(readFileSync(this.statePath, 'utf8')))
+    // codeql[js/path-injection]
+    const state = CatalogStateSchema.parse(JSON.parse(readFileSync(this.statePath, 'utf8')))
+    state.applications = state.applications.map((application) => ({
+      ...application,
+      packageDir: pathInside(this.packagesDir, application.packageDir, 'stored application package path'),
+      manifestPath: pathInside(
+        application.packageDir,
+        application.manifestPath,
+        'stored application manifest path',
+      ),
+    }))
+    return state
   }
 
   #write(state: z.infer<typeof CatalogStateSchema>): void {
@@ -173,16 +256,32 @@ export class FileApplicationCatalog {
       )
     }
 
-    const packageDir = join(this.packagesDir, hash(manifest.uri), manifest.version)
+    const packageDir = childPath(
+      this.packagesDir,
+      'application package path',
+      hash(manifest.uri),
+      hash(manifest.version),
+    )
+    // packageDir is derived exclusively from SHA-256 path components under packagesDir.
+    // codeql[js/path-injection]
     rmSync(packageDir, { recursive: true, force: true })
+    // codeql[js/path-injection]
     mkdirSync(packageDir, { recursive: true, mode: 0o700 })
     let installedManifestPath: string
     if (local) {
+      // local.packageRoot is explicitly chosen by the local operator; packageDir is confined above.
+      // codeql[js/path-injection]
       cpSync(local.packageRoot, packageDir, { recursive: true, force: true })
-      const relative = local.manifestPath.slice(local.packageRoot.length).replace(/^[/\\]/, '')
-      installedManifestPath = join(packageDir, relative)
+      const relativeManifest = relative(local.packageRoot, local.manifestPath)
+      installedManifestPath = childPath(packageDir, 'installed application manifest path', relativeManifest)
     } else {
-      installedManifestPath = join(packageDir, 'agentcomm.application.json')
+      installedManifestPath = childPath(
+        packageDir,
+        'installed application manifest path',
+        'agentcomm.application.json',
+      )
+      // installedManifestPath is a fixed child of a confined packageDir.
+      // codeql[js/path-injection]
       writeFileSync(installedManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 })
     }
 
@@ -238,7 +337,12 @@ export class FileApplicationCatalog {
     )
     if (removed.length === 0) return false
     state.applications = state.applications.filter((item) => !removed.includes(item))
-    for (const item of removed) rmSync(item.packageDir, { recursive: true, force: true })
+    for (const item of removed) {
+      const packageDir = pathInside(this.packagesDir, item.packageDir, 'application package path')
+      // packageDir is revalidated against packagesDir even if catalog.json was tampered with.
+      // codeql[js/path-injection]
+      rmSync(packageDir, { recursive: true, force: true })
+    }
     this.#write(state)
     return true
   }
@@ -284,9 +388,11 @@ export class FileApplicationCatalog {
   }
 
   manifest(application: InstalledApplication): ApplicationExtensionManifest {
-    return ApplicationExtensionManifestSchema.parse(
-      JSON.parse(readFileSync(application.manifestPath, 'utf8')),
-    )
+    const packageDir = pathInside(this.packagesDir, application.packageDir, 'application package path')
+    const manifestPath = pathInside(packageDir, application.manifestPath, 'application manifest path')
+    // Both stored paths are confined again before every read.
+    // codeql[js/path-injection]
+    return ApplicationExtensionManifestSchema.parse(JSON.parse(readFileSync(manifestPath, 'utf8')))
   }
 
   async loadConsumer(application: InstalledApplication): Promise<{
@@ -298,8 +404,8 @@ export class FileApplicationCatalog {
     if (!application.executableTrusted) {
       throw new Error(`application consumer code is not trusted: ${application.uri}`)
     }
-    const entry = resolve(application.packageDir, manifest.runtime.entry)
-    if (!entry.startsWith(`${application.packageDir}/`)) throw new Error('runtime entry escaped package root')
+    const packageDir = pathInside(this.packagesDir, application.packageDir, 'application package path')
+    const entry = childPath(packageDir, 'runtime entry', manifest.runtime.entry)
     const module = (await import(pathToFileURL(entry).href)) as LoadedApplicationConsumerModule
     const candidate = module[manifest.runtime.export]
     if (typeof candidate !== 'function') {
@@ -319,9 +425,15 @@ export async function fetchApplicationRegistry(url: string): Promise<Application
   }
   const raw =
     parsed.protocol === 'file:'
-      ? readFileSync(parsed, 'utf8')
+      ? // file: registries are explicit local CLI inputs and never arrive in remote messages.
+        // codeql[js/path-injection]
+        readFileSync(parsed, 'utf8')
       : await (async () => {
-          const response = await fetch(parsed, { redirect: 'error' })
+          const remote = publicHttpsUrl(parsed.href, 'application registry')
+          // This URL is an explicit local registry selection and has passed the same restrictions
+          // as remote manifests. Redirects remain disabled.
+          // codeql[js/request-forgery]
+          const response = await fetch(remote, { redirect: 'error' })
           if (!response.ok) throw new Error(`application registry returned HTTP ${response.status}`)
           return response.text()
         })()
@@ -352,6 +464,8 @@ export function validateApplicationPackage(source: string): {
     join(local.packageRoot, 'spec', 'conformance.json'),
   ]
   const fixturePath = fixturePathCandidates.find(existsSync)
+  // fixturePath is one of two fixed filenames under the operator-selected package root.
+  // codeql[js/path-injection]
   const rawFixtures = fixturePath ? JSON.parse(readFileSync(fixturePath, 'utf8')) : []
   const fixtures = z.array(ApplicationConformanceFixtureSchema).parse(rawFixtures)
   return { manifest: local.manifest, fixtures }
@@ -364,8 +478,13 @@ export interface ScaffoldApplicationOptions {
 }
 
 export function scaffoldApplicationPackage(directory: string, options: ScaffoldApplicationOptions): string {
+  // directory is an explicit local output chosen by the CLI operator.
+  // codeql[js/path-injection]
   const target = resolve(directory)
+  // codeql[js/path-injection]
   if (existsSync(target)) throw new Error(`target already exists: ${target}`)
+  // All descendants below target use fixed filenames.
+  // codeql[js/path-injection]
   mkdirSync(join(target, 'spec'), { recursive: true, mode: 0o755 })
   const slug = options.name
     .trim()

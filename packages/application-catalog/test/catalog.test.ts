@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FileApplicationCatalog,
+  fetchApplicationRegistry,
   scaffoldApplicationPackage,
   searchApplicationRegistry,
   validateApplicationPackage,
@@ -110,5 +111,47 @@ describe('application catalog', () => {
       catalog.install('https://example.test/remote-worker/manifest.json', { allowCode: true }),
     ).rejects.toThrow('download and review the complete package')
     expect(catalog.list()).toEqual([])
+  })
+
+  it('rejects local and private HTTP targets before making a registry or manifest request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const root = mkdtempSync(join(tmpdir(), 'agentcomm-private-target-'))
+    const catalog = new FileApplicationCatalog(join(root, 'catalog'))
+
+    await expect(fetchApplicationRegistry('https://127.0.0.1/registry.json')).rejects.toThrow(
+      'private or reserved address',
+    )
+    await expect(catalog.install('https://localhost/manifest.json')).rejects.toThrow(
+      'cannot target a local host',
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when persisted package paths escape the catalog root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentcomm-tampered-catalog-'))
+    const catalogRoot = join(root, 'catalog')
+    const catalog = new FileApplicationCatalog(catalogRoot)
+    writeFileSync(
+      join(catalogRoot, 'catalog.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        applications: [
+          {
+            uri: 'https://example.test/tampered/v1',
+            name: 'Tampered',
+            version: '1.0.0',
+            source: '/tmp/source',
+            packageDir: root,
+            manifestPath: join(root, 'manifest.json'),
+            installedAt: new Date().toISOString(),
+            executableTrusted: false,
+            enabled: [],
+          },
+        ],
+      }),
+    )
+
+    expect(() => catalog.list()).toThrow('stored application package path escaped')
   })
 })

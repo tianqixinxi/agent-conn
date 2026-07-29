@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { type BenchmarkSuite, compareBenchmarkReports, runBenchmarkSuite } from '../src/index.js'
+import {
+  type BenchmarkSuite,
+  compareBenchmarkReports,
+  createProcessBenchmarkExecutor,
+  runBenchmarkSuite,
+} from '../src/index.js'
 
 const suite: BenchmarkSuite = {
   schemaVersion: 1,
@@ -54,5 +59,12 @@ describe('layered benchmark runner', () => {
       successRateDelta: -0.5,
       p95LatencyDeltaMs: 10,
     })
+  })
+
+  it('rejects NUL bytes before spawning a benchmark executable', () => {
+    expect(() => createProcessBenchmarkExecutor({ command: 'node\0malicious' })).toThrow('NUL bytes')
+    expect(() => createProcessBenchmarkExecutor({ command: 'node', args: ['script.mjs\0ignored'] })).toThrow(
+      'NUL bytes',
+    )
   })
 })

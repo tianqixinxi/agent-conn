@@ -142,7 +142,9 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
   const cliPath = resolve(options.cliPath ?? process.argv[1] ?? '')
   if (!existsSync(cliPath)) throw new Error(`AgentComm CLI entry does not exist: ${cliPath}`)
   const nodePath = resolve(options.nodePath ?? process.execPath)
-  const home = options.homeDir ?? homedir()
+  // homeDir is an explicit local operator override. Resolving it once and appending only fixed
+  // service paths prevents a runtime/profile value from choosing the destination.
+  const home = resolve(options.homeDir ?? homedir())
   const execute = options.execute ?? defaultExecutor
   const start = options.start ?? true
   let path: string
@@ -155,6 +157,8 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
     content = renderSystemdService({ profile: options.profile, nodePath, cliPath })
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  // path is a fixed suffix below the resolved local home directory.
+  // codeql[js/path-injection]
   writeFileSync(path, content, { mode: 0o600 })
   if (!start) return { platform, path, started: false }
   const commands: DaemonServiceCommand[] =
@@ -196,7 +200,7 @@ export function uninstallDaemonService(
   if (platform !== 'darwin' && platform !== 'linux') {
     throw new Error(`daemon service installation is not supported on ${platform}`)
   }
-  const home = options.homeDir ?? homedir()
+  const home = resolve(options.homeDir ?? homedir())
   const execute = options.execute ?? defaultExecutor
   const path =
     platform === 'darwin'
@@ -212,6 +216,8 @@ export function uninstallDaemonService(
     execute({ command: 'systemctl', args: ['--user', 'daemon-reload'] })
   }
   const removed = existsSync(path)
+  // path is a fixed suffix below the resolved local home directory.
+  // codeql[js/path-injection]
   rmSync(path, { force: true })
   return { removed, path }
 }

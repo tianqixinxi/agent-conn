@@ -187,10 +187,18 @@ export function createProcessBenchmarkExecutor(input: {
   cwd?: string | undefined
   env?: NodeJS.ProcessEnv | undefined
 }): BenchmarkExecutor {
-  if (!input.command.trim()) throw new Error('benchmark command is required')
+  const command = input.command.trim()
+  if (!command) throw new Error('benchmark command is required')
+  if (command.includes('\0') || (input.args ?? []).some((argument) => argument.includes('\0'))) {
+    throw new Error('benchmark command and arguments cannot contain NUL bytes')
+  }
   return async (benchmarkCase, iteration) =>
     new Promise<BenchmarkExecution>((resolve, reject) => {
-      const child = spawn(input.command, input.args ?? [], {
+      // The executable and argv are supplied explicitly by the local benchmark operator. shell:false
+      // is the security boundary: suite/event data is passed over stdin and environment variables,
+      // never interpolated into the command line.
+      // codeql[js/command-line-injection]
+      const child = spawn(command, input.args ?? [], {
         cwd: input.cwd,
         env: {
           ...(input.env ?? process.env),

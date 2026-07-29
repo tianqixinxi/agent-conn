@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   AgentCommError,
   GetMembersRespSchema,
@@ -194,11 +194,18 @@ export function createApp(deps: RelayDeps): Hono {
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
   app.get('/bin/:asset', (c) => {
     const asset = c.req.param('asset')
-    if (!['agent-comm-cli.mjs', 'schema.store.sql', 'schema.hub.sql'].includes(asset)) {
-      return c.notFound()
-    }
-    const path = join(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd(), asset)
+    const allowedAssets = {
+      'agent-comm-cli.mjs': 'agent-comm-cli.mjs',
+      'schema.store.sql': 'schema.store.sql',
+      'schema.hub.sql': 'schema.hub.sql',
+    } as const
+    const selected = allowedAssets[asset as keyof typeof allowedAssets]
+    if (!selected) return c.notFound()
+    const assetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
+    const path = join(assetRoot, selected)
     if (!existsSync(path)) return c.notFound()
+    // selected comes from the fixed allowlist above and cannot contain path separators.
+    // codeql[js/path-injection]
     return c.body(readFileSync(path), 200, {
       'content-type':
         asset === 'agent-comm-cli.mjs' ? 'text/javascript; charset=UTF-8' : 'text/plain; charset=UTF-8',

@@ -29,6 +29,9 @@ function writeTemporaryPrivateFile(targetPath: string, data: string): string {
   mkdirSync(parent, { recursive: true, mode: 0o700 })
   const tempPath = temporaryPath(targetPath)
   // O_EXCL and O_NOFOLLOW prevent symlink replacement at the final filesystem boundary.
+  // The file is created beside the destination in its private 0700 profile directory, not in a
+  // shared OS temporary directory.
+  // codeql[js/insecure-temporary-file]
   // codeql[js/path-injection]
   const fd = openSync(
     tempPath,

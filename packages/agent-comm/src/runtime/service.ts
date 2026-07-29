@@ -137,7 +137,6 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
     throw new Error(`daemon service installation is not supported on ${platform}`)
   }
   const cliPath = resolve(process.argv[1] ?? '')
-  if (!existsSync(cliPath)) throw new Error(`AgentComm CLI entry does not exist: ${cliPath}`)
   const nodePath = resolve(process.execPath)
   const home = resolve(homedir())
   const execute = options.execute ?? defaultExecutor

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   AgentCommError,
   GetMembersRespSchema,
@@ -75,8 +76,14 @@ import {
 
 export interface RelayDeps {
   dbPath: string
-  /** Directory containing the single-file CLI bundle and its SQLite schemas. */
-  cliAssetDir?: string | undefined
+  /** In-memory override used by embedded/test relays; production reads fixed packaged assets. */
+  cliAssets?:
+    | {
+        'agent-comm-cli.mjs': string
+        'schema.store.sql': string
+        'schema.hub.sql': string
+      }
+    | undefined
   /**
    * Opt-in plaintext A2A gateway. Native AgentComm clients keep using the E2E wire endpoint; this
    * gateway terminates A2A at the relay and therefore belongs only in explicitly trusted deployments.
@@ -192,13 +199,36 @@ export function createApp(deps: RelayDeps): Hono {
 
   app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
-  const cliAssetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
-  const cliBundlePath = join(cliAssetRoot, 'agent-comm-cli.mjs')
-  const storeSchemaPath = join(cliAssetRoot, 'schema.store.sql')
-  const hubSchemaPath = join(cliAssetRoot, 'schema.hub.sql')
+  const packagedCliBundlePath = fileURLToPath(new URL('./agent-comm-cli.mjs', import.meta.url))
+  const packagedStoreSchemaPath = fileURLToPath(new URL('./schema.store.sql', import.meta.url))
+  const packagedHubSchemaPath = fileURLToPath(new URL('./schema.hub.sql', import.meta.url))
+  const workspaceCliBundlePath = resolve('packages/agent-comm/dist/agent-comm-cli.mjs')
+  const workspaceStoreSchemaPath = resolve('packages/agent-comm/dist/schema.store.sql')
+  const workspaceHubSchemaPath = resolve('packages/agent-comm/dist/schema.hub.sql')
+  const cliBundle =
+    deps.cliAssets?.['agent-comm-cli.mjs'] ??
+    (existsSync(packagedCliBundlePath)
+      ? readFileSync(packagedCliBundlePath, 'utf8')
+      : existsSync(workspaceCliBundlePath)
+        ? readFileSync(workspaceCliBundlePath, 'utf8')
+        : undefined)
+  const storeSchema =
+    deps.cliAssets?.['schema.store.sql'] ??
+    (existsSync(packagedStoreSchemaPath)
+      ? readFileSync(packagedStoreSchemaPath, 'utf8')
+      : existsSync(workspaceStoreSchemaPath)
+        ? readFileSync(workspaceStoreSchemaPath, 'utf8')
+        : undefined)
+  const hubSchema =
+    deps.cliAssets?.['schema.hub.sql'] ??
+    (existsSync(packagedHubSchemaPath)
+      ? readFileSync(packagedHubSchemaPath, 'utf8')
+      : existsSync(workspaceHubSchemaPath)
+        ? readFileSync(workspaceHubSchemaPath, 'utf8')
+        : undefined)
   app.get('/bin/agent-comm-cli.mjs', (c) => {
-    if (!existsSync(cliBundlePath)) return c.notFound()
-    return c.body(readFileSync(cliBundlePath), 200, {
+    if (cliBundle === undefined) return c.notFound()
+    return c.body(cliBundle, 200, {
       'content-type': 'text/javascript; charset=UTF-8',
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
@@ -206,8 +236,8 @@ export function createApp(deps: RelayDeps): Hono {
     })
   })
   app.get('/bin/schema.store.sql', (c) => {
-    if (!existsSync(storeSchemaPath)) return c.notFound()
-    return c.body(readFileSync(storeSchemaPath), 200, {
+    if (storeSchema === undefined) return c.notFound()
+    return c.body(storeSchema, 200, {
       'content-type': 'text/plain; charset=UTF-8',
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
@@ -215,8 +245,8 @@ export function createApp(deps: RelayDeps): Hono {
     })
   })
   app.get('/bin/schema.hub.sql', (c) => {
-    if (!existsSync(hubSchemaPath)) return c.notFound()
-    return c.body(readFileSync(hubSchemaPath), 200, {
+    if (hubSchema === undefined) return c.notFound()
+    return c.body(hubSchema, 200, {
       'content-type': 'text/plain; charset=UTF-8',
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",

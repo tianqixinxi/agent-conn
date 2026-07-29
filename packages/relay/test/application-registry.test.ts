@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -39,10 +39,14 @@ describe('public application registry', () => {
 
   it('serves the portable runtime bundle without relay authentication', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agentcomm-cli-assets-'))
-    writeFileSync(join(root, 'agent-comm-cli.mjs'), 'console.log("agentcomm")\n')
-    writeFileSync(join(root, 'schema.store.sql'), 'select 1;\n')
-    writeFileSync(join(root, 'schema.hub.sql'), 'select 2;\n')
-    const app = createApp({ dbPath: join(root, 'relay.db'), cliAssetDir: root })
+    const app = createApp({
+      dbPath: join(root, 'relay.db'),
+      cliAssets: {
+        'agent-comm-cli.mjs': 'console.log("agentcomm")\n',
+        'schema.store.sql': 'select 1;\n',
+        'schema.hub.sql': 'select 2;\n',
+      },
+    })
 
     const cli = await app.request('http://relay.test/bin/agent-comm-cli.mjs')
     expect(cli.status).toBe(200)

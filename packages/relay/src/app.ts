@@ -193,27 +193,36 @@ export function createApp(deps: RelayDeps): Hono {
   app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
   const cliAssetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
-  const cliAssetResponse = (
-    c: Context,
-    filename: string,
-    contentType: string,
-  ): Response | Promise<Response> => {
-    const assetPath = join(cliAssetRoot, filename)
-    if (!existsSync(assetPath)) return c.notFound()
-    return c.body(readFileSync(assetPath), 200, {
-      'content-type': contentType,
+  const cliBundlePath = join(cliAssetRoot, 'agent-comm-cli.mjs')
+  const storeSchemaPath = join(cliAssetRoot, 'schema.store.sql')
+  const hubSchemaPath = join(cliAssetRoot, 'schema.hub.sql')
+  app.get('/bin/agent-comm-cli.mjs', (c) => {
+    if (!existsSync(cliBundlePath)) return c.notFound()
+    return c.body(readFileSync(cliBundlePath), 200, {
+      'content-type': 'text/javascript; charset=UTF-8',
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff',
     })
-  }
-  app.get('/bin/agent-comm-cli.mjs', (c) =>
-    cliAssetResponse(c, 'agent-comm-cli.mjs', 'text/javascript; charset=UTF-8'),
-  )
-  app.get('/bin/schema.store.sql', (c) =>
-    cliAssetResponse(c, 'schema.store.sql', 'text/plain; charset=UTF-8'),
-  )
-  app.get('/bin/schema.hub.sql', (c) => cliAssetResponse(c, 'schema.hub.sql', 'text/plain; charset=UTF-8'))
+  })
+  app.get('/bin/schema.store.sql', (c) => {
+    if (!existsSync(storeSchemaPath)) return c.notFound()
+    return c.body(readFileSync(storeSchemaPath), 200, {
+      'content-type': 'text/plain; charset=UTF-8',
+      'cache-control': 'public, max-age=300',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+    })
+  })
+  app.get('/bin/schema.hub.sql', (c) => {
+    if (!existsSync(hubSchemaPath)) return c.notFound()
+    return c.body(readFileSync(hubSchemaPath), 200, {
+      'content-type': 'text/plain; charset=UTF-8',
+      'cache-control': 'public, max-age=300',
+      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+    })
+  })
 
   const publicHtml = (c: Context, html: string): Response =>
     c.body(html, 200, {

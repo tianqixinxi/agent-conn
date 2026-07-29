@@ -84,21 +84,6 @@ export interface RelayDeps {
   enableA2AIngress?: boolean | undefined
 }
 
-const CLI_ASSETS = {
-  'agent-comm-cli.mjs': {
-    filename: 'agent-comm-cli.mjs',
-    contentType: 'text/javascript; charset=UTF-8',
-  },
-  'schema.store.sql': {
-    filename: 'schema.store.sql',
-    contentType: 'text/plain; charset=UTF-8',
-  },
-  'schema.hub.sql': {
-    filename: 'schema.hub.sql',
-    contentType: 'text/plain; charset=UTF-8',
-  },
-} as const
-
 type Handler = (c: Context) => Promise<Response>
 
 /** 统一把 AgentCommError 转成 WireErrorSchema + 语义化状态码;未预期错误兜底 503 并打 stderr */
@@ -207,23 +192,28 @@ export function createApp(deps: RelayDeps): Hono {
 
   app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
-  app.get('/bin/:asset', (c) => {
-    const requestedAsset = c.req.param('asset')
-    if (!Object.hasOwn(CLI_ASSETS, requestedAsset)) return c.notFound()
-    const asset = CLI_ASSETS[requestedAsset as keyof typeof CLI_ASSETS]
-    const assetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
-    const assetPath = join(assetRoot, asset.filename)
-    // asset.filename comes from the closed constant map above; assetRoot is a local operator setting.
-    // codeql[js/path-injection]
+  const cliAssetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
+  const cliAssetResponse = (
+    c: Context,
+    filename: string,
+    contentType: string,
+  ): Response | Promise<Response> => {
+    const assetPath = join(cliAssetRoot, filename)
     if (!existsSync(assetPath)) return c.notFound()
-    // codeql[js/path-injection]
     return c.body(readFileSync(assetPath), 200, {
-      'content-type': asset.contentType,
+      'content-type': contentType,
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff',
     })
-  })
+  }
+  app.get('/bin/agent-comm-cli.mjs', (c) =>
+    cliAssetResponse(c, 'agent-comm-cli.mjs', 'text/javascript; charset=UTF-8'),
+  )
+  app.get('/bin/schema.store.sql', (c) =>
+    cliAssetResponse(c, 'schema.store.sql', 'text/plain; charset=UTF-8'),
+  )
+  app.get('/bin/schema.hub.sql', (c) => cliAssetResponse(c, 'schema.hub.sql', 'text/plain; charset=UTF-8'))
 
   const publicHtml = (c: Context, html: string): Response =>
     c.body(html, 200, {

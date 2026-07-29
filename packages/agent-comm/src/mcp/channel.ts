@@ -1005,6 +1005,7 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
     const events = await a2a.readInbox(MAX_PENDING_EVENTS, channel)
     for (const { transport: message, event } of events) {
       if (announcedEvents.has(message.messageId) && ingress.capabilities.delivery !== 'poll') continue
+      let ackApplicationAfterIngress = false
       const selector =
         event?.kind === 'message' ? readApplicationEventSelector(event.value.metadata) : undefined
       if (selector && event?.kind === 'message' && applicationRuntime) {
@@ -1021,8 +1022,11 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
           sourceRuntimeInstanceId: message.runtimeInstanceId ?? routing?.runtimeInstanceId,
         }
         const processed = await applicationRuntime.process(applicationEvent)
-        if (processed.autoAck) await engine.ack({ messageId: message.messageId })
-        if (processed.status === 'ignored-terminal') continue
+        if (processed.status === 'ignored-terminal') {
+          await engine.ack({ messageId: message.messageId })
+          continue
+        }
+        ackApplicationAfterIngress = processed.autoAck
         if (processed.status === 'reduced') {
           await applicationRuntime.executePendingEffects(
             (effect) => effect.effect.type === 'publish' || effect.effect.type === 'complete',
@@ -1037,6 +1041,7 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
                 `agent-comm application approval pending: channel=${message.channel} event=${message.messageId}\n`,
               )
             }
+            await engine.ack({ messageId: message.messageId })
             continue
           }
           const needsHarnessDecision = processed.effects.some(
@@ -1045,7 +1050,10 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
               effect.effect.type === 'request-authorization' ||
               effect.effect.type === 'store-artifact',
           )
-          if (processed.consumerStatus === 'handled' && !needsHarnessDecision) continue
+          if (processed.consumerStatus === 'handled' && !needsHarnessDecision && !processed.duplicate) {
+            await engine.ack({ messageId: message.messageId })
+            continue
+          }
         }
       }
       if (shouldAutoAckSilently(event)) {
@@ -1082,7 +1090,7 @@ export function createChannelBridge(engine: Engine, opts: ChannelBridgeOptions =
       if (ingress.capabilities.delivery !== 'poll' && pendingEvents.has(message.messageId)) {
         announcedEvents.add(message.messageId)
       }
-      if (shouldAutoAckAfterNotification(event)) {
+      if (ackApplicationAfterIngress || shouldAutoAckAfterNotification(event)) {
         await engine.ack({ messageId: message.messageId })
         pendingEvents.delete(message.messageId)
       }

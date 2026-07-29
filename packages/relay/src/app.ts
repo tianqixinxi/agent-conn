@@ -84,6 +84,21 @@ export interface RelayDeps {
   enableA2AIngress?: boolean | undefined
 }
 
+const CLI_ASSETS = {
+  'agent-comm-cli.mjs': {
+    filename: 'agent-comm-cli.mjs',
+    contentType: 'text/javascript; charset=UTF-8',
+  },
+  'schema.store.sql': {
+    filename: 'schema.store.sql',
+    contentType: 'text/plain; charset=UTF-8',
+  },
+  'schema.hub.sql': {
+    filename: 'schema.hub.sql',
+    contentType: 'text/plain; charset=UTF-8',
+  },
+} as const
+
 type Handler = (c: Context) => Promise<Response>
 
 /** 统一把 AgentCommError 转成 WireErrorSchema + 语义化状态码;未预期错误兜底 503 并打 stderr */
@@ -193,22 +208,17 @@ export function createApp(deps: RelayDeps): Hono {
   app.get('/install.sh', (c) => shellScript(c, renderInstallerScript(requestOrigin(c))))
   app.get('/bin/agentcomm', (c) => shellScript(c, renderAgentCommLauncher(requestOrigin(c))))
   app.get('/bin/:asset', (c) => {
-    const asset = c.req.param('asset')
-    const allowedAssets = {
-      'agent-comm-cli.mjs': 'agent-comm-cli.mjs',
-      'schema.store.sql': 'schema.store.sql',
-      'schema.hub.sql': 'schema.hub.sql',
-    } as const
-    const selected = allowedAssets[asset as keyof typeof allowedAssets]
-    if (!selected) return c.notFound()
+    const requestedAsset = c.req.param('asset')
+    if (!Object.hasOwn(CLI_ASSETS, requestedAsset)) return c.notFound()
+    const asset = CLI_ASSETS[requestedAsset as keyof typeof CLI_ASSETS]
     const assetRoot = resolve(deps.cliAssetDir ?? process.env.AGENTCOMM_CLI_ASSET_DIR ?? process.cwd())
-    const path = join(assetRoot, selected)
-    if (!existsSync(path)) return c.notFound()
-    // selected comes from the fixed allowlist above and cannot contain path separators.
-    // codeql[js/path-injection]
-    return c.body(readFileSync(path), 200, {
-      'content-type':
-        asset === 'agent-comm-cli.mjs' ? 'text/javascript; charset=UTF-8' : 'text/plain; charset=UTF-8',
+    const assetPath = join(assetRoot, asset.filename)
+    // asset.filename comes from the closed constant map above; assetRoot is a local operator setting.
+    // lgtm[js/path-injection]
+    if (!existsSync(assetPath)) return c.notFound()
+    // lgtm[js/path-injection]
+    return c.body(readFileSync(assetPath), 200, {
+      'content-type': asset.contentType,
       'cache-control': 'public, max-age=300',
       'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
       'x-content-type-options': 'nosniff',

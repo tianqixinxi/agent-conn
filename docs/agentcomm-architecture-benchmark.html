@@ -878,7 +878,7 @@
           <p>各层单测通过后，再用因子实验评价交互效应。</p>
         </article>
       </div>
-      <p class="source">可执行入口：<code>agentcomm benchmark run benchmarks/p0-suite.json --command &lt;executor&gt;</code></p>
+      <p class="source">可执行入口：<code>agentcomm benchmark run benchmarks/p0-suite.json --runner /absolute/runner --allow-runner-exec</code></p>
     </section>
 
     <section class="slide" data-kicker="08 / Benchmark stack" data-notes="<strong>五层 Benchmark：</strong>L1 看协作有没有收益；L2 看协议运行时是否正确；L3 看 A2A 与 Harness 是否准确高效；L4 看故障下是否仍可靠；L5 看容量、延迟、成本和运维。每层的评价问题都不同。">

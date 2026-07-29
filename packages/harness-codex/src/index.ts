@@ -214,6 +214,7 @@ export class CodexAppServerConnection implements CodexAppServerClient {
 
 export interface CodexAppServerIngressOptions {
   client?: CodexAppServerClient | undefined
+  command?: string | undefined
   cwd?: string | undefined
   threadByChannel?: Map<string, string> | undefined
 }
@@ -237,7 +238,8 @@ export class CodexAppServerIngressAdapter implements RuntimeIngressAdapter {
   #outcomeHandler: RuntimeIngressOutcomeHandler | undefined
 
   constructor(options: CodexAppServerIngressOptions = {}) {
-    this.#client = options.client ?? new CodexAppServerConnection({ cwd: options.cwd })
+    this.#client =
+      options.client ?? new CodexAppServerConnection({ command: options.command, cwd: options.cwd })
     this.#client.setNotificationHandler?.((message) => {
       void this.#handleNotification(message)
     })

@@ -122,8 +122,6 @@ WantedBy=default.target
 
 export interface InstallDaemonServiceOptions {
   profile: ProfilePaths
-  cliPath?: string | undefined
-  nodePath?: string | undefined
   platform?: NodeJS.Platform | undefined
   homeDir?: string | undefined
   start?: boolean | undefined
@@ -139,9 +137,9 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
   if (platform !== 'darwin' && platform !== 'linux') {
     throw new Error(`daemon service installation is not supported on ${platform}`)
   }
-  const cliPath = resolve(options.cliPath ?? process.argv[1] ?? '')
+  const cliPath = resolve(process.argv[1] ?? '')
   if (!existsSync(cliPath)) throw new Error(`AgentComm CLI entry does not exist: ${cliPath}`)
-  const nodePath = resolve(options.nodePath ?? process.execPath)
+  const nodePath = resolve(process.execPath)
   // homeDir is an explicit local operator override. Resolving it once and appending only fixed
   // service paths prevents a runtime/profile value from choosing the destination.
   const home = resolve(options.homeDir ?? homedir())
@@ -158,7 +156,7 @@ export function installDaemonService(options: InstallDaemonServiceOptions): {
   }
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   // path is a fixed suffix below the resolved local home directory.
-  // codeql[js/path-injection]
+  // lgtm[js/path-injection]
   writeFileSync(path, content, { mode: 0o600 })
   if (!start) return { platform, path, started: false }
   const commands: DaemonServiceCommand[] =
@@ -217,7 +215,7 @@ export function uninstallDaemonService(
   }
   const removed = existsSync(path)
   // path is a fixed suffix below the resolved local home directory.
-  // codeql[js/path-injection]
+  // lgtm[js/path-injection]
   rmSync(path, { force: true })
   return { removed, path }
 }

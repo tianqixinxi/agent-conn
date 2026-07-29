@@ -578,10 +578,12 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
       if (!current) throw new Error(`application is not installed: ${uri}`)
       let source = cmdOpts.source ?? current.source
       if (cmdOpts.registry) {
-        const { fetchApplicationRegistry } = await import('@agent-comm/application-catalog')
+        const { compareApplicationVersions, fetchApplicationRegistry } = await import(
+          '@agent-comm/application-catalog'
+        )
         const candidates = (await fetchApplicationRegistry(cmdOpts.registry))
           .filter((item) => item.uri === uri)
-          .sort((a, b) => b.version.localeCompare(a.version))
+          .sort((a, b) => compareApplicationVersions(b.version, a.version))
         const candidate = candidates[0]
         if (!candidate) throw new Error(`application is not present in registry: ${uri}`)
         source = candidate.manifestUrl
@@ -898,12 +900,25 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
   benchmark
     .command('run')
     .argument('<suite>', 'benchmark suite JSON')
-    .requiredOption('--command <path>', '每轮从 stdin 接收 case，并在 stdout 最后一行返回 JSON')
+    .requiredOption('--runner <absolute-path>', '受信任 runner 的绝对可执行路径')
+    .option('--allow-runner-exec', '确认允许执行这个本机 runner', false)
     .option('--arg <args...>')
     .option('--cwd <path>')
     .option('--output <path>', '写入完整 JSON report')
     .action(
-      async (suite: string, cmdOpts: { command: string; arg?: string[]; cwd?: string; output?: string }) => {
+      async (
+        suite: string,
+        cmdOpts: {
+          runner: string
+          allowRunnerExec?: boolean
+          arg?: string[]
+          cwd?: string
+          output?: string
+        },
+      ) => {
+        if (!cmdOpts.allowRunnerExec) {
+          throw new Error('benchmark runner execution requires --allow-runner-exec')
+        }
         const { readFileSync, writeFileSync } = await import('node:fs')
         const { BenchmarkSuiteSchema, createProcessBenchmarkExecutor, runBenchmarkSuite } = await import(
           '@agent-comm/benchmark'
@@ -912,9 +927,10 @@ export async function runCli(argv: string[], opts: RunCliOptions = {}): Promise<
         const report = await runBenchmarkSuite(
           parsed,
           createProcessBenchmarkExecutor({
-            command: cmdOpts.command,
+            command: cmdOpts.runner,
             args: cmdOpts.arg,
             cwd: cmdOpts.cwd,
+            authorizedByOperator: true,
           }),
         )
         if (cmdOpts.output) writeFileSync(cmdOpts.output, `${JSON.stringify(report, null, 2)}\n`)

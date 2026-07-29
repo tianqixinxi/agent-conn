@@ -25,14 +25,14 @@ function writeTemporaryPrivateFile(targetPath: string, data: string): string {
   const parent = dirname(targetPath)
   // This API only receives operator-owned profile paths; they are not derived from relay or
   // channel input. Profile root/name validation happens in config.ts before this boundary.
-  // codeql[js/path-injection]
+  // lgtm[js/path-injection]
   mkdirSync(parent, { recursive: true, mode: 0o700 })
   const tempPath = temporaryPath(targetPath)
   // O_EXCL and O_NOFOLLOW prevent symlink replacement at the final filesystem boundary.
   // The file is created beside the destination in its private 0700 profile directory, not in a
   // shared OS temporary directory.
-  // codeql[js/insecure-temporary-file]
-  // codeql[js/path-injection]
+  // lgtm[js/insecure-temporary-file]
+  // lgtm[js/path-injection]
   const fd = openSync(
     tempPath,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
@@ -51,7 +51,9 @@ function writeTemporaryPrivateFile(targetPath: string, data: string): string {
 export function readPrivateFile(path: string): string {
   // O_NOFOLLOW prevents an attacker from replacing a key with a symlink between validation and use.
   // Profile directories are private (0700); this operator-owned path is validated by config.ts.
-  // codeql[js/path-injection]
+  // This opens an existing profile file; it does not create a file in the OS temporary directory.
+  // lgtm[js/insecure-temporary-file]
+  // lgtm[js/path-injection]
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const stat = fstatSync(fd)
@@ -71,14 +73,14 @@ export function replacePrivateFile(path: string, data: string): void {
   let failure: unknown
   try {
     // Both paths are internal derivatives of the validated operator-owned profile path.
-    // codeql[js/path-injection]
+    // lgtm[js/path-injection]
     renameSync(tempPath, path)
   } catch (err) {
     failure = err
   }
   try {
     // The random temporary path was created above with O_EXCL inside the private profile directory.
-    // codeql[js/path-injection]
+    // lgtm[js/path-injection]
     unlinkSync(tempPath)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT' && failure === undefined) failure = err
@@ -93,7 +95,7 @@ export function createPrivateFile(path: string, data: string): boolean {
   let failure: unknown
   try {
     // Both paths are internal derivatives of the validated operator-owned profile path.
-    // codeql[js/path-injection]
+    // lgtm[js/path-injection]
     linkSync(tempPath, path)
     created = true
   } catch (err) {
@@ -101,7 +103,7 @@ export function createPrivateFile(path: string, data: string): boolean {
   }
   try {
     // The random temporary path was created above with O_EXCL inside the private profile directory.
-    // codeql[js/path-injection]
+    // lgtm[js/path-injection]
     unlinkSync(tempPath)
   } catch (err) {
     if (failure === undefined) failure = err

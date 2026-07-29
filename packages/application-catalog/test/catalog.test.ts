@@ -2,8 +2,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
+  compareApplicationVersions,
   FileApplicationCatalog,
   fetchApplicationRegistry,
   scaffoldApplicationPackage,
@@ -12,8 +13,10 @@ import {
 } from '../src/index.js'
 
 describe('application catalog', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  it('orders registry releases by SemVer, including multi-digit and prerelease versions', () => {
+    expect(compareApplicationVersions('1.10.0', '1.9.0')).toBeGreaterThan(0)
+    expect(compareApplicationVersions('2.0.0', '2.0.0-rc.1')).toBeGreaterThan(0)
+    expect(compareApplicationVersions('2.0.0-rc.10', '2.0.0-rc.2')).toBeGreaterThan(0)
   })
 
   it('scaffolds, installs, enables, disables, and removes a data-only package', async () => {
@@ -100,12 +103,10 @@ describe('application catalog', () => {
         'task.created': { uri: 'https://example.test/remote-worker/task-created.schema.json' },
       },
     }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify(manifest), { status: 200 })),
-    )
     const root = mkdtempSync(join(tmpdir(), 'agentcomm-remote-code-'))
-    const catalog = new FileApplicationCatalog(join(root, 'catalog'))
+    const catalog = new FileApplicationCatalog(join(root, 'catalog'), {
+      remoteReader: async () => JSON.stringify(manifest),
+    })
 
     await expect(
       catalog.install('https://example.test/remote-worker/manifest.json', { allowCode: true }),
@@ -114,18 +115,21 @@ describe('application catalog', () => {
   })
 
   it('rejects local and private HTTP targets before making a registry or manifest request', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
     const root = mkdtempSync(join(tmpdir(), 'agentcomm-private-target-'))
     const catalog = new FileApplicationCatalog(join(root, 'catalog'))
 
     await expect(fetchApplicationRegistry('https://127.0.0.1/registry.json')).rejects.toThrow(
       'private or reserved address',
     )
+    await expect(fetchApplicationRegistry('https://[::1]/registry.json')).rejects.toThrow(
+      'private or reserved address',
+    )
+    await expect(fetchApplicationRegistry('https://[::ffff:127.0.0.1]/registry.json')).rejects.toThrow(
+      'private or reserved address',
+    )
     await expect(catalog.install('https://localhost/manifest.json')).rejects.toThrow(
       'cannot target a local host',
     )
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('fails closed when persisted package paths escape the catalog root', () => {

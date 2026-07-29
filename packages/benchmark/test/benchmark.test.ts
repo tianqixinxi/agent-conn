@@ -62,9 +62,62 @@ describe('layered benchmark runner', () => {
   })
 
   it('rejects NUL bytes before spawning a benchmark executable', () => {
-    expect(() => createProcessBenchmarkExecutor({ command: 'node\0malicious' })).toThrow('NUL bytes')
-    expect(() => createProcessBenchmarkExecutor({ command: 'node', args: ['script.mjs\0ignored'] })).toThrow(
-      'NUL bytes',
-    )
+    expect(() =>
+      createProcessBenchmarkExecutor({
+        command: process.execPath,
+        args: ['script.mjs\0ignored'],
+        authorizedByOperator: true,
+      }),
+    ).toThrow('NUL bytes')
+  })
+
+  it('requires an explicit local authorization and an absolute executable', () => {
+    expect(() =>
+      createProcessBenchmarkExecutor({
+        command: 'node',
+        authorizedByOperator: true,
+      }),
+    ).toThrow('absolute executable path')
+    expect(() =>
+      createProcessBenchmarkExecutor({
+        command: process.execPath,
+        authorizedByOperator: false as true,
+      }),
+    ).toThrow('was not authorized')
+  })
+
+  it('terminates a process executor when a benchmark sample times out', async () => {
+    const hangingSuite: BenchmarkSuite = {
+      schemaVersion: 1,
+      name: 'timeout',
+      description: 'process timeout',
+      cases: [
+        {
+          id: 'hanging-process',
+          description: 'never returns',
+          layer: 'system',
+          iterations: 1,
+          warmup: 0,
+          timeoutMs: 50,
+          variant: {},
+          input: {},
+          thresholds: { successRate: 1 },
+        },
+      ],
+    }
+    const executor = createProcessBenchmarkExecutor({
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+      authorizedByOperator: true,
+    })
+    const started = Date.now()
+
+    const report = await runBenchmarkSuite(hangingSuite, executor)
+
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(report.cases[0]).toMatchObject({
+      passed: false,
+      failures: ['benchmark timed out after 50ms'],
+    })
   })
 })

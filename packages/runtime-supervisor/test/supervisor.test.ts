@@ -89,4 +89,51 @@ describe('runtime supervisor', () => {
       }),
     ).resolves.toMatchObject({ status: 'accepted' })
   })
+
+  it('continues starting trusted runtimes after one registration fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agentcomm-runtime-isolation-'))
+    const registry = new FileRuntimeRegistry(join(root, 'runtimes.json'))
+    registry.register({
+      id: 'broken',
+      profile: 'broken',
+      harness: 'process',
+      channels: ['c-one'],
+      args: [],
+      applications: [],
+      trustedAutoResume: true,
+    })
+    registry.register({
+      id: 'healthy',
+      profile: 'healthy',
+      harness: 'process',
+      channels: ['c-one'],
+      args: [],
+      applications: [],
+      trustedAutoResume: true,
+    })
+    const adapters = new RuntimeAdapterRegistry()
+    adapters.register({
+      id: 'process',
+      harnesses: ['process'],
+      priority: 1,
+      detect: () => true,
+      create: () => adapter('process', 'accepted'),
+    })
+    const supervisor = new RuntimeSupervisor({
+      registry,
+      adapters,
+      launcher: {
+        async launch({ registration, runtimeInstanceId }) {
+          if (registration.id === 'broken') throw new Error('broken runtime')
+          return { runtimeInstanceId, async close() {} }
+        },
+      },
+    })
+
+    await expect(supervisor.startAll()).resolves.toEqual([
+      expect.objectContaining({ id: 'broken', state: 'failed', detail: 'broken runtime' }),
+      expect.objectContaining({ id: 'healthy', state: 'online' }),
+    ])
+    await supervisor.stopAll()
+  })
 })

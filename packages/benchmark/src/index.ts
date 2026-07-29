@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { accessSync, constants, realpathSync, statSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { z } from 'zod'
 
@@ -50,6 +52,7 @@ export interface BenchmarkExecution {
 export type BenchmarkExecutor = (
   benchmarkCase: BenchmarkCase,
   iteration: number,
+  context?: { signal: AbortSignal } | undefined,
 ) => Promise<BenchmarkExecution>
 
 export interface BenchmarkCaseReport {
@@ -88,13 +91,17 @@ function fixed(value: number): number {
   return Number(value.toFixed(3))
 }
 
-async function runWithTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+async function runWithTimeout<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined
+  const controller = new AbortController()
   try {
     return await Promise.race([
-      work,
+      work(controller.signal),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`benchmark timed out after ${timeoutMs}ms`)), timeoutMs)
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error(`benchmark timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
       }),
     ])
   } finally {
@@ -113,7 +120,10 @@ export async function runBenchmarkSuite(
     const executor = typeof executors === 'function' ? executors : executors[benchmarkCase.layer]
     if (!executor) throw new Error(`no benchmark executor for layer ${benchmarkCase.layer}`)
     for (let index = 0; index < benchmarkCase.warmup; index += 1) {
-      await runWithTimeout(executor(benchmarkCase, -index - 1), benchmarkCase.timeoutMs)
+      await runWithTimeout(
+        (signal) => executor(benchmarkCase, -index - 1, { signal }),
+        benchmarkCase.timeoutMs,
+      )
     }
     const latencies: number[] = []
     const failures: string[] = []
@@ -124,7 +134,10 @@ export async function runBenchmarkSuite(
     for (let index = 0; index < benchmarkCase.iterations; index += 1) {
       const sampleStarted = performance.now()
       try {
-        const result = await runWithTimeout(executor(benchmarkCase, index), benchmarkCase.timeoutMs)
+        const result = await runWithTimeout(
+          (signal) => executor(benchmarkCase, index, { signal }),
+          benchmarkCase.timeoutMs,
+        )
         if (result.success) successes += 1
         if (result.correct !== undefined) {
           evaluated += 1
@@ -181,25 +194,43 @@ export async function runBenchmarkSuite(
   }
 }
 
-export function createProcessBenchmarkExecutor(input: {
+export interface AuthorizedProcessBenchmarkRunner {
   command: string
   args?: readonly string[] | undefined
   cwd?: string | undefined
   env?: NodeJS.ProcessEnv | undefined
-}): BenchmarkExecutor {
-  const command = input.command.trim()
-  if (!command) throw new Error('benchmark command is required')
+  authorizedByOperator: true
+}
+
+function resolveExecutable(command: string): string {
+  if (!isAbsolute(command)) {
+    throw new Error('benchmark runner must be an absolute executable path')
+  }
+  const executable = realpathSync(command)
+  if (!statSync(executable).isFile()) throw new Error('benchmark runner must be a regular file')
+  accessSync(executable, constants.X_OK)
+  return executable
+}
+
+/**
+ * Runs only an executable explicitly authorized by the local operator. Benchmark
+ * suite data is sent over stdin and can never select or modify the command line.
+ */
+export function createProcessBenchmarkExecutor(input: AuthorizedProcessBenchmarkRunner): BenchmarkExecutor {
+  if (input.authorizedByOperator !== true) throw new Error('benchmark runner execution was not authorized')
+  const command = resolveExecutable(input.command.trim())
   if (command.includes('\0') || (input.args ?? []).some((argument) => argument.includes('\0'))) {
     throw new Error('benchmark command and arguments cannot contain NUL bytes')
   }
-  return async (benchmarkCase, iteration) =>
+  const cwd = input.cwd ? realpathSync(input.cwd) : undefined
+  if (cwd && !statSync(cwd).isDirectory()) throw new Error('benchmark cwd must be a directory')
+  return async (benchmarkCase, iteration, context) =>
     new Promise<BenchmarkExecution>((resolve, reject) => {
-      // The executable and argv are supplied explicitly by the local benchmark operator. shell:false
-      // is the security boundary: suite/event data is passed over stdin and environment variables,
-      // never interpolated into the command line.
-      // codeql[js/command-line-injection]
+      // command is an absolute executable resolved above after an explicit local authorization;
+      // suite/event data is passed over stdin and never interpolated into command or argv.
+      // lgtm[js/command-line-injection]
       const child = spawn(command, input.args ?? [], {
-        cwd: input.cwd,
+        cwd,
         env: {
           ...(input.env ?? process.env),
           AGENTCOMM_BENCHMARK_CASE: benchmarkCase.id,
@@ -211,6 +242,21 @@ export function createProcessBenchmarkExecutor(input: {
       })
       let stdout = ''
       let stderr = ''
+      let forceKillTimer: NodeJS.Timeout | undefined
+      const abort = (): void => {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        child.kill('SIGTERM')
+        forceKillTimer = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+        }, 1_000)
+        forceKillTimer.unref()
+      }
+      const cleanup = (): void => {
+        context?.signal.removeEventListener('abort', abort)
+        if (forceKillTimer) clearTimeout(forceKillTimer)
+      }
+      if (context?.signal.aborted) abort()
+      else context?.signal.addEventListener('abort', abort, { once: true })
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
       child.stdout.on('data', (chunk: string) => {
@@ -219,8 +265,12 @@ export function createProcessBenchmarkExecutor(input: {
       child.stderr.on('data', (chunk: string) => {
         stderr += chunk
       })
-      child.once('error', reject)
+      child.once('error', (error) => {
+        cleanup()
+        reject(error)
+      })
       child.once('close', (exitCode) => {
+        cleanup()
         if (exitCode !== 0) {
           resolve({
             success: false,

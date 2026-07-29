@@ -36,7 +36,7 @@ export function createDefaultRuntimeAdapterRegistry(): RuntimeAdapterRegistry {
     id: 'codex-exec',
     harnesses: ['codex-exec'],
     priority: 110,
-    detect: () => commandAvailable('codex'),
+    detect: ({ registration }) => commandAvailable(registration.command ?? 'codex'),
     create: ({ registration }) =>
       new CodexExecIngressAdapter({ cwd: registration.cwd, command: registration.command }),
   })
@@ -46,14 +46,18 @@ export function createDefaultRuntimeAdapterRegistry(): RuntimeAdapterRegistry {
     id: 'codex-app-server',
     harnesses: ['codex-app-server'],
     priority: 100,
-    detect: () => commandAvailable('codex'),
-    create: ({ registration }) => new CodexAppServerIngressAdapter({ cwd: registration.cwd }),
+    detect: ({ registration }) => commandAvailable(registration.command ?? 'codex'),
+    create: ({ registration }) =>
+      new CodexAppServerIngressAdapter({
+        cwd: registration.cwd,
+        command: registration.command,
+      }),
   })
   registry.register({
     id: 'claude-code-print',
     harnesses: ['claude-code'],
     priority: 90,
-    detect: () => commandAvailable('claude'),
+    detect: ({ registration }) => commandAvailable(registration.command ?? 'claude'),
     create: ({ registration }) =>
       new ClaudeCodePrintIngressAdapter({
         cwd: registration.cwd,

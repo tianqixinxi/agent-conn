@@ -97,7 +97,9 @@ async function connectBridge(
 ) {
   const bridge = createChannelBridge(engine, {
     ...options,
-    notify: async (notification) => void notifications.push(notification),
+    ...(options.ingress
+      ? {}
+      : { notify: async (notification: ChannelNotification) => void notifications.push(notification) }),
     stderr: () => {},
   })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -523,6 +525,65 @@ describe('Claude Code channel bridge', () => {
       eventType: 'work.completed',
     })
     expect(sends).toHaveLength(2)
+  })
+
+  it('keeps an application event unacked until deferred runtime ingress accepts it', async () => {
+    const original = createA2AMessage({
+      messageId: 'a2a-deferred-application',
+      role: 'user',
+      payload: { goal: 'review README' },
+      contextId: 'ctx-deferred-application',
+      taskId: 'task-deferred-application',
+      metadata: withApplicationEventSelector(undefined, {
+        uri: REPOSITORY_EXTENSION,
+        version: '1.0.0',
+        eventType: 'work.requested',
+      }),
+    })
+    const inbound = message({
+      messageId: 'transport-deferred-application',
+      contentType: A2A_MEDIA_TYPE,
+      payload: encodeA2AEvent({ kind: 'message', value: original }),
+    })
+    const engine = new FakeEngine({
+      inbox: [inbound],
+      memberships: [{ channel: 'duet', alias: 'bob', home: 'local:/duet.db' }],
+    })
+    const applicationRuntime = new ApplicationRuntime({
+      runtimeInstanceId: 'r-deferred-runtime-001',
+      profilePrincipal: 'node-bob',
+      registry: new ApplicationConsumerRegistry(),
+      store: new InMemoryApplicationRuntimeStore(),
+    })
+    let attempts = 0
+    const ingress: NonNullable<ChannelBridgeOptions['ingress']> = {
+      id: 'deferred-then-accepted',
+      capabilities: {
+        delivery: 'process',
+        wake: 'process',
+        background: true,
+        interactiveApproval: false,
+        streaming: false,
+        durability: 'upstream',
+      },
+      async deliver() {
+        attempts += 1
+        return attempts === 1 ? { status: 'deferred', detail: 'runtime busy' } : { status: 'accepted' }
+      },
+    }
+    const { bridge, client } = await connectBridge(engine, [], { applicationRuntime, ingress })
+    await activate(client)
+
+    await bridge.pollOnce()
+    expect(attempts).toBe(1)
+    expect(engine.calls.some((call) => call.method === 'ack')).toBe(false)
+
+    await bridge.pollOnce()
+    expect(attempts).toBe(2)
+    expect(engine.calls.find((call) => call.method === 'ack')?.args[0]).toEqual({
+      messageId: inbound.messageId,
+    })
+    applicationRuntime.close()
   })
 
   it('executes a consumer publish effect through the real Channel adapter after state commit', async () => {

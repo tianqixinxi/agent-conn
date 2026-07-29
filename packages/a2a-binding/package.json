@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@a2a-js/sdk": "1.0.0-beta.0",
+    "@a2a-js/sdk": "1.0.1",
     "@agent-comm/core": "workspace:*",
     "zod": "^4.4.3"
   }

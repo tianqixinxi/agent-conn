@@ -57,23 +57,22 @@ describe('relay public channels', () => {
     expect(homeHtml).toContain('data-agentcomm-action="install"')
     expect(homeHtml).toContain("if (action === 'install')")
     expect(homeHtml).toContain("' + shellQuote(origin + '/install.sh') + ' | bash'")
-    expect(homeHtml).toContain('AgentComm 0.8.0')
+    expect(homeHtml).toContain('AgentComm 0.8.1')
     expect(homeHtml).toContain('One install.')
-    expect(homeHtml).toContain('Any agent.')
+    expect(homeHtml).toContain('Claude or Codex.')
     expect(homeHtml).toContain('Three steps from zero to collaboration.')
     expect(homeHtml.match(/class="step-card"/g)).toHaveLength(3)
     expect(homeHtml).toContain('data-value-online="0"')
     expect(homeHtml).toContain('https://github.com/tianqixinxi/agent-conn/blob/main/ARCHITECTURE.md')
-    expect(homeHtml).toContain('Native first. Explicit fallback.')
-    expect(homeHtml).toContain('Claude Code native channel')
-    expect(homeHtml).toContain('Claude print-mode')
-    expect(homeHtml).toContain('Codex app-server')
-    expect(homeHtml).toContain('Codex exec')
-    expect(homeHtml).toContain('Generic process')
-    expect(homeHtml).toContain('without pretending every desktop runtime has native push')
-    expect(homeHtml).toContain('trustedAutoResume')
-    expect(homeHtml).toContain('agentcomm runtime add | list | remove')
-    expect(homeHtml).toContain('agentcomm daemon install | status | stop | uninstall')
+    expect(homeHtml).toContain('Start where you already work.')
+    expect(homeHtml).toContain('Claude Code CLI and Codex CLI are the two fully supported user paths')
+    expect(homeHtml).toContain('href="/use/claude-code"')
+    expect(homeHtml).toContain('href="/use/codex"')
+    expect(homeHtml).not.toContain('Runtime adapters')
+    expect(homeHtml).not.toContain('Claude print-mode')
+    expect(homeHtml).not.toContain('Codex app-server')
+    expect(homeHtml).not.toContain('Generic process')
+    expect(homeHtml).not.toContain('trustedAutoResume')
     expect(homeHtml).toContain('Ship a collaboration protocol, not another transport.')
     expect(homeHtml).toContain('/api/public/applications')
     expect(homeHtml).toContain('request-response · 1.0.0')
@@ -120,7 +119,9 @@ describe('relay public channels', () => {
       'p0ColdStartTitle',
       'p0StepRuntimeCopy',
       'p0RuntimeTitle',
-      'p0RuntimeCaveat',
+      'p0FullySupported',
+      'p0ClaudeChoiceCopy',
+      'p0CodexChoiceCopy',
       'p0DeveloperTitle',
       'p0DeveloperRegistryCopy',
       'p0RegistryTitle',
@@ -133,6 +134,24 @@ describe('relay public channels', () => {
       expect(homeHtml).toContain(`data-i18n="${key}"`)
       expect(homeHtml.split(`"${key}":`)).toHaveLength(10)
     }
+
+    const claudeGuide = await app.request('/use/claude-code')
+    expect(claudeGuide.status).toBe(200)
+    const claudeGuideHtml = await claudeGuide.text()
+    expect(claudeGuideHtml).toContain('Use AgentComm with Claude Code CLI')
+    expect(claudeGuideHtml).toContain('agentcomm open')
+    expect(claudeGuideHtml).toContain('agentcomm activate &lt;channel&gt;')
+    expect(claudeGuideHtml).toContain('Incoming channel work appears directly')
+    expect(claudeGuideHtml).not.toContain('Codex app-server')
+
+    const codexGuide = await app.request('/use/codex')
+    expect(codexGuide.status).toBe(200)
+    const codexGuideHtml = await codexGuide.text()
+    expect(codexGuideHtml).toContain('Use AgentComm with Codex CLI')
+    expect(codexGuideHtml).toContain("agentcomm core join '&lt;invitation-url&gt;' --alias codex")
+    expect(codexGuideHtml).toContain('--harness codex-exec')
+    expect(codexGuideHtml).toContain('agentcomm daemon run --once')
+    expect(codexGuideHtml).toContain('without claiming desktop-native push')
 
     const publicCreatePath = '/ch/open-lab/create'
     const publicCreateBody = {

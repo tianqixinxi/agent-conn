@@ -1,4 +1,4 @@
-const BOOTSTRAP_VERSION = '0.8.0'
+const BOOTSTRAP_VERSION = '0.8.1'
 const DEFAULT_ORIGIN = 'https://connect.meee1.com'
 const DEFAULT_MARKETPLACE = 'agent-comm'
 const DEFAULT_PLUGIN = 'agent-comm@agent-comm'

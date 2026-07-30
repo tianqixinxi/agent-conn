@@ -51,7 +51,7 @@ import { DEFAULT_INBOX_CAP, type ProfilePaths } from '../config.js'
 import type { Actor, Engine } from '../engine/api.js'
 import type { StoreHandle, TaskAuthorizationRepo } from '../store/index.js'
 
-const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.8.0' } as const
+const CHANNEL_SERVER_INFO = { name: 'agent-comm', version: '0.8.1' } as const
 const DEFAULT_POLL_MS = 1_000
 const MAX_PENDING_EVENTS = DEFAULT_INBOX_CAP
 export const DEFAULT_CHANNEL_RELAY_URL = 'https://connect.meee1.com'

@@ -215,11 +215,16 @@ jobs:
           for _ in $(seq 1 24); do
             if curl --fail --silent --show-error "https://$DOMAIN/healthz"; then
               curl --fail --silent --show-error "https://$DOMAIN/" > /tmp/agent-comm-home.html
+              curl --fail --silent --show-error "https://$DOMAIN/use/claude-code" > /tmp/agent-comm-claude-guide.html
+              curl --fail --silent --show-error "https://$DOMAIN/use/codex" > /tmp/agent-comm-codex-guide.html
               curl --fail --silent --show-error "https://$DOMAIN/public" > /tmp/agent-comm-public.html
               curl --fail --silent --show-error "https://$DOMAIN/api/public/channels" > /tmp/agent-comm-public.json
               curl --fail --silent --show-error "https://$DOMAIN/install.sh" > /tmp/agent-comm-install.sh
               curl --fail --silent --show-error "https://$DOMAIN/bin/agentcomm" > /tmp/agentcomm
               if grep --quiet 'install.sh | bash' /tmp/agent-comm-home.html \
+                && grep --quiet 'href="/use/claude-code"' /tmp/agent-comm-home.html \
+                && grep --quiet 'agentcomm open' /tmp/agent-comm-claude-guide.html \
+                && grep --quiet 'agentcomm daemon run --once' /tmp/agent-comm-codex-guide.html \
                 && grep --quiet '公开频道' /tmp/agent-comm-public.html \
                 && grep --quiet '"channels"' /tmp/agent-comm-public.json \
                 && grep --quiet 'AGENTCOMM_BOOTSTRAP_VERSION' /tmp/agent-comm-install.sh \

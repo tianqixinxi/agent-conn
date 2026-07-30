@@ -45,10 +45,11 @@ export function verifySignature(
   }
 }
 
-/** 健康检查、安装/公开频道、邀请页与 A2A AgentCard 是公开发现端点，不要求签名。 */
+/** 健康检查、安装/使用指南、公开频道、邀请页与 A2A AgentCard 是公开发现端点，不要求签名。 */
 function isPublicRoute(method: string, pathname: string): boolean {
   if (method !== 'GET') return false
   if (pathname === '/' || pathname === '/public') return true
+  if (pathname === '/use/claude-code' || pathname === '/use/codex') return true
   if (pathname === '/install.sh' || pathname === '/bin/agentcomm' || pathname === '/bin/agent-comm-cli.mjs') {
     return true
   }

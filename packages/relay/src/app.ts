@@ -39,7 +39,13 @@ import { createAuthMiddleware, requireHeaderNode } from './auth.js'
 import { renderAgentCommLauncher, renderInstallerScript } from './bootstrap-scripts.js'
 import { errorStatus } from './http.js'
 import { renderJoinPage } from './join-page.js'
-import { renderLandingPage, renderPublicChannel, renderPublicDirectory } from './public-pages.js'
+import {
+  renderClaudeCodeGuide,
+  renderCodexGuide,
+  renderLandingPage,
+  renderPublicChannel,
+  renderPublicDirectory,
+} from './public-pages.js'
 import type { RelayDb } from './store.js'
 import {
   ackCursor,
@@ -267,6 +273,8 @@ export function createApp(deps: RelayDeps): Hono {
     const origin = requestOrigin(c)
     return publicHtml(c, renderLandingPage(listPublicChannels(db), origin))
   })
+  app.get('/use/claude-code', (c) => publicHtml(c, renderClaudeCodeGuide(requestOrigin(c))))
+  app.get('/use/codex', (c) => publicHtml(c, renderCodexGuide(requestOrigin(c))))
   app.get('/public', (c) => {
     const origin = requestOrigin(c)
     return publicHtml(c, renderPublicDirectory(listPublicChannels(db), origin))

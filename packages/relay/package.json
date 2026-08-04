@@ -14,7 +14,7 @@
     "@agent-comm/core": "workspace:*",
     "@agent-comm/gateway-a2a": "workspace:*",
     "@hono/node-server": "^2.0.10",
-    "hono": "^4.8.0",
+    "hono": "^4.12.34",
     "zod": "^4.4.3"
   }
 }

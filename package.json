@@ -28,10 +28,10 @@
     "relay": "node --disable-warning=ExperimentalWarning --import tsx packages/relay/src/main.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
-    "@types/node": "^26.1.1",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.20.0",
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }
